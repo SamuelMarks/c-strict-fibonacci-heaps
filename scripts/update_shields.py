@@ -14,10 +14,10 @@ def main():
     doc_cov = 0.0
     total_decls = 0
     doc_decls = 0
-    if os.path.exists("include"):
-        for root, _, files in os.walk("include"):
+    if os.path.exists("src"):
+        for root, _, files in os.walk("src"):
             for file in files:
-                if file.endswith(".h"):
+                if file.endswith(".h") or file.endswith(".h.in"):
                     with open(
                         os.path.join(root, file), "r", encoding="utf-8", errors="ignore"
                     ) as f:
@@ -25,6 +25,7 @@ def main():
                     for i, line in enumerate(lines):
                         if (
                             "_API " in line
+                            or "_EXPORT " in line
                             or line.startswith("void ")
                             or line.startswith("int ")
                             or line.startswith("char ")
@@ -87,6 +88,8 @@ def main():
 
         readme = re.sub(r"\[!\[Doc Coverage\]\(.*?\)\]\(.*?\)\n?", "", readme)
         readme = re.sub(r"\[!\[Test Coverage\]\(.*?\)\]\(.*?\)\n?", "", readme)
+        readme = re.sub(r"!\[Doc Coverage\]\(.*?\)\n?", "", readme)
+        readme = re.sub(r"!\[Test Coverage\]\(.*?\)\n?", "", readme)
 
         license_regex = r"(\[!\[License\].*?\]\(.*?\)\n?)"
         insert_str = r"\1" + doc_shield + "\n"

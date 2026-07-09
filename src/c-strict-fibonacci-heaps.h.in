@@ -163,9 +163,7 @@ C_STRICT_FIBONACCI_HEAPS_EXPORT @PREFIX@_error_t @PREFIX@_delete(@PREFIX@_heap_t
  */
 C_STRICT_FIBONACCI_HEAPS_EXPORT @PREFIX@_error_t @PREFIX@_decrease_key(@PREFIX@_heap_t *heap, @PREFIX@_node_t *node, @PREFIX@_key_t key);
 
-/* clang-format off */
 #ifdef __cplusplus
 }
+#endif /* __cplusplus */
 #endif
-#endif
-/* clang-format on */

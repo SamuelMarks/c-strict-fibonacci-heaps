@@ -2,7 +2,6 @@
 #include "@PREFIX@.h"
 #include <assert.h>
 #include <stddef.h>
-#include <stdint.h>
 /* clang-format on */
 /**
  * \file strict_fibonacci_heaps.c.in

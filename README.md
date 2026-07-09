@@ -1,11 +1,9 @@
 # c-strict-fibonacci-heaps
 
 [![License](https://img.shields.io/badge/license-Apache--2.0%20OR%20MIT-blue.svg)](https://opensource.org/licenses/Apache-2.0)
-[![Doc Coverage](https://img.shields.io/badge/docs-0%25-red.svg)](#)
+[![Doc Coverage](https://img.shields.io/badge/docs-100%25-brightgreen.svg)](#)
 [![Test Coverage](https://img.shields.io/badge/coverage-98%25-brightgreen.svg)](#)
 [![CI](https://github.com/SamuelMarks/cdd-go/actions/workflows/ci.yml/badge.svg)](https://github.com/SamuelMarks/cdd-go/actions/workflows/ci.yml)
-![Test Coverage](https://img.shields.io/badge/Test%20Coverage-100.0%25-brightgreen.svg)
-![Doc Coverage](https://img.shields.io/badge/Doc%20Coverage-100.0%25-brightgreen.svg)
 
 A strictly C89 compliant, zero-allocation (0 malloc), template-generated Strict Fibonacci Heap library.
 

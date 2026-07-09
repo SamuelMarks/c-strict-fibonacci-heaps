@@ -59,7 +59,7 @@ set(SFH_KEY_TYPES_DEFAULT
 set(SFH_KEY_TYPES "${SFH_KEY_TYPES_DEFAULT}" CACHE STRING "Semicolon-separated list of types for keys")
 
 set(SFH_VAL_TYPES_DEFAULT
-    "int8_t;int16_t;int32_t;int64_t;uint8_t;uint16_t;uint32_t;uint64_t;float;double;char*"
+    "int8_t;int16_t;int32_t;int64_t;uint8_t;uint16_t;uint32_t;uint64_t;float;double;char*;void*"
 )
 set(SFH_VAL_TYPES "${SFH_VAL_TYPES_DEFAULT}" CACHE STRING "Semicolon-separated list of types for values")
 
@@ -73,6 +73,9 @@ file(WRITE ${COMPOSITE_HEADER} "/* clang-format off */
 
 #include \"c_strict_fibonacci_heaps_export.h\"
 
+#ifdef __cplusplus
+extern \"C\" {
+#endif
 ")
 
 foreach(KEY_TYPE IN LISTS SFH_KEY_TYPES)
@@ -109,7 +112,13 @@ foreach(KEY_TYPE IN LISTS SFH_KEY_TYPES)
     endforeach()
 endforeach()
 
-file(APPEND ${COMPOSITE_HEADER} "\n#endif /* STRICT_FIBONACCI_HEAPS_H */\n/* clang-format on */\n")
+file(APPEND ${COMPOSITE_HEADER} "
+/* clang-format on */
+#ifdef __cplusplus
+}
+#endif /* __cplusplus */
+#endif /* STRICT_FIBONACCI_HEAPS_H */
+")
 
 # ------------------------------------------------------------------------------
 # Targets
