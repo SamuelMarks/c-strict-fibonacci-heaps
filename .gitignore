@@ -104,3 +104,4 @@ Thumbs.db
 *.tmp
 *.sublime-project
 *.sublime-workspace
+emsdk/
