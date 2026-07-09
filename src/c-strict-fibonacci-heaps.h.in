@@ -1,0 +1,171 @@
+/* clang-format off */
+#ifndef SFH_@PREFIX@_H
+#define SFH_@PREFIX@_H
+
+#include <stddef.h>
+#include "c_strict_fibonacci_heaps_export.h"
+/* Guard stdint.h for old MSVC */
+#if defined(_MSC_VER) && _MSC_VER < 1600
+typedef signed __int8 int8_t;
+typedef unsigned __int8 uint8_t;
+typedef signed __int16 int16_t;
+typedef unsigned __int16 uint16_t;
+typedef signed __int32 int32_t;
+typedef unsigned __int32 uint32_t;
+typedef signed __int64 int64_t;
+typedef unsigned __int64 uint64_t;
+#else
+#include <stdint.h>
+#endif
+
+#ifdef __cplusplus
+extern "C" {
+#endif
+/* clang-format on */
+/**
+ * \file strict_fibonacci_heaps.h.in
+ * \brief Strict Fibonacci Heaps definitions.
+ */
+
+/** \brief Error codes for @PREFIX@ operations. */
+typedef enum @PREFIX@_error {
+    @PREFIX@_SUCCESS = 0,      /**< Operation succeeded. */
+    @PREFIX@_ERR_NULL_ARG,     /**< A null pointer was passed. */
+    @PREFIX@_ERR_EMPTY,        /**< The heap is empty. */
+    @PREFIX@_ERR_OUT_OF_RANKS  /**< The maximum rank limit was exceeded. */
+} @PREFIX@_error_t;
+
+/** \brief Key type definition. */
+typedef @KEY_TYPE@ @PREFIX@_key_t;
+/** \brief Value type definition. */
+typedef @VAL_TYPE@ @PREFIX@_val_t;
+
+struct @PREFIX@_rank;
+struct @PREFIX@_heap;
+
+/** \brief Strict Fibonacci Heap Node. */
+typedef struct @PREFIX@_node {
+    @PREFIX@_key_t key;              /**< The key used for ordering. */
+    @PREFIX@_val_t value;            /**< The payload value. */
+
+    struct @PREFIX@_node *parent;    /**< Parent node. */
+    struct @PREFIX@_node *left_child;/**< Leftmost child node. */
+    struct @PREFIX@_node *right;     /**< Right sibling. */
+    struct @PREFIX@_node *left;      /**< Left sibling. */
+
+    struct @PREFIX@_rank *rank;      /**< Rank object reference. */
+
+    struct @PREFIX@_node *prev;      /**< Fix-list previous node. */
+    struct @PREFIX@_node *next;      /**< Fix-list next node. */
+
+    int loss;                        /**< Loss count for fixed nodes. */
+    unsigned char is_free;           /**< 1 if free, 0 if fixed. */
+    unsigned char is_min_inf;        /**< 1 if minus infinity (deleted). */
+} @PREFIX@_node_t;
+
+/** \brief Rank list object. */
+typedef struct @PREFIX@_rank {
+    struct @PREFIX@_rank *next;      /**< Next rank. */
+    struct @PREFIX@_rank *prev;      /**< Previous rank. */
+    struct @PREFIX@_heap *heap;      /**< Associated heap. */
+    int rank;                        /**< The integer rank. */
+    struct @PREFIX@_node *free_node; /**< First free node of this rank. */
+    struct @PREFIX@_node *loss_one_node; /**< First loss=1 node of this rank. */
+    int reference_count;             /**< Number of nodes using this rank. */
+} @PREFIX@_rank_t;
+
+/** \brief Maximum number of supported ranks (limits max elements to approx 2^100). */
+#ifndef SFH_MAX_RANKS
+#define SFH_MAX_RANKS 100
+#endif
+
+/** \brief Strict Fibonacci Heap object. */
+typedef struct @PREFIX@_heap {
+    int active;                      /**< 1 if heap is active, 0 if melded away. */
+    size_t size;                     /**< Number of elements. */
+    @PREFIX@_node_t *root;           /**< The root node with minimum key. */
+    @PREFIX@_rank_t *rank_list;      /**< Head of the rank linked list. */
+
+    @PREFIX@_node_t *fix_passive;           /**< Passive nodes fix list. */
+    @PREFIX@_node_t *fix_free_multiple;     /**< Free nodes multiple fix list. */
+    @PREFIX@_node_t *fix_free_single;       /**< Free nodes single fix list. */
+    @PREFIX@_node_t *fix_loss_zero;         /**< Loss=0 nodes fix list. */
+    @PREFIX@_node_t *fix_loss_one_multiple; /**< Loss=1 multiple fix list. */
+    @PREFIX@_node_t *fix_loss_one_single;   /**< Loss=1 single fix list. */
+    @PREFIX@_node_t *fix_loss_two;          /**< Loss=2 fix list. */
+
+    @PREFIX@_rank_t rank_pool[SFH_MAX_RANKS]; /**< Inline storage for rank objects (Zero malloc). */
+} @PREFIX@_heap_t;
+
+/**
+ * \brief Initialize a strict fibonacci heap.
+ * \param heap Pointer to the heap to initialize.
+ * \return @PREFIX@_SUCCESS on success, error code otherwise.
+ */
+C_STRICT_FIBONACCI_HEAPS_EXPORT @PREFIX@_error_t @PREFIX@_init(@PREFIX@_heap_t *heap);
+
+/**
+ * \brief Check if heap is empty.
+ * \param heap Pointer to the heap.
+ * \param out_empty Pointer to store 1 if empty, 0 otherwise.
+ * \return @PREFIX@_SUCCESS on success, error code otherwise.
+ */
+C_STRICT_FIBONACCI_HEAPS_EXPORT @PREFIX@_error_t @PREFIX@_empty(const @PREFIX@_heap_t *heap, int *out_empty);
+
+/**
+ * \brief Get the node with the minimum key.
+ * \param heap Pointer to the heap.
+ * \param out_node Pointer to store the minimum node pointer.
+ * \return @PREFIX@_SUCCESS on success, error code otherwise.
+ */
+C_STRICT_FIBONACCI_HEAPS_EXPORT @PREFIX@_error_t @PREFIX@_find_min(const @PREFIX@_heap_t *heap, @PREFIX@_node_t **out_node);
+
+/**
+ * \brief Insert a node into the heap.
+ * \param heap Pointer to the heap.
+ * \param node Pointer to an uninitialized node (allocated by caller).
+ * \param key The key to insert.
+ * \param value The value to insert.
+ * \return @PREFIX@_SUCCESS on success, error code otherwise.
+ */
+C_STRICT_FIBONACCI_HEAPS_EXPORT @PREFIX@_error_t @PREFIX@_insert(@PREFIX@_heap_t *heap, @PREFIX@_node_t *node, @PREFIX@_key_t key, @PREFIX@_val_t value);
+
+/**
+ * \brief Meld two heaps together.
+ * \param h1 First heap.
+ * \param h2 Second heap.
+ * \param out_heap Pointer to store the resulting active heap pointer.
+ * \return @PREFIX@_SUCCESS on success, error code otherwise.
+ */
+C_STRICT_FIBONACCI_HEAPS_EXPORT @PREFIX@_error_t @PREFIX@_meld(@PREFIX@_heap_t *h1, @PREFIX@_heap_t *h2, @PREFIX@_heap_t **out_heap);
+
+/**
+ * \brief Delete the node with the minimum key.
+ * \param heap Pointer to the heap.
+ * \return @PREFIX@_SUCCESS on success, error code otherwise.
+ */
+C_STRICT_FIBONACCI_HEAPS_EXPORT @PREFIX@_error_t @PREFIX@_delete_min(@PREFIX@_heap_t *heap);
+
+/**
+ * \brief Delete a specific node from the heap.
+ * \param heap Pointer to the heap.
+ * \param node Pointer to the node to delete.
+ * \return @PREFIX@_SUCCESS on success, error code otherwise.
+ */
+C_STRICT_FIBONACCI_HEAPS_EXPORT @PREFIX@_error_t @PREFIX@_delete(@PREFIX@_heap_t *heap, @PREFIX@_node_t *node);
+
+/**
+ * \brief Decrease the key of a specific node.
+ * \param heap Pointer to the heap.
+ * \param node Pointer to the node.
+ * \param key The new, smaller key.
+ * \return @PREFIX@_SUCCESS on success, error code otherwise.
+ */
+C_STRICT_FIBONACCI_HEAPS_EXPORT @PREFIX@_error_t @PREFIX@_decrease_key(@PREFIX@_heap_t *heap, @PREFIX@_node_t *node, @PREFIX@_key_t key);
+
+/* clang-format off */
+#ifdef __cplusplus
+}
+#endif
+#endif
+/* clang-format on */
