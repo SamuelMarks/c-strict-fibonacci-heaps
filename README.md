@@ -1,5 +1,4 @@
-c-strict-fibonacci-heaps
-========================
+# c-strict-fibonacci-heaps
 
 [![License](https://img.shields.io/badge/license-Apache--2.0%20OR%20MIT-blue.svg)](https://opensource.org/licenses/Apache-2.0)
 [![Doc Coverage](https://img.shields.io/badge/docs-0%25-red.svg)](#)
@@ -10,13 +9,19 @@ c-strict-fibonacci-heaps
 
 A strictly C89 compliant, zero-allocation (0 malloc), template-generated Strict Fibonacci Heap library.
 
-Based on the algorithm described by Gerth Stølting Brodal, George Lagogiannis, and Robert E. Tarjan, this implementation achieves worst-case $O(1)$ time for `find_min`, `insert`, `meld`, and `decrease_key`, and $O(\log n)$ worst-case time for `delete` and `delete_min`.
+Based on the breakthrough algorithm described by Gerth Stølting Brodal, George Lagogiannis, and Robert E. Tarjan, this implementation achieves true **worst-case** $O(1)$ time for `find_min`, `insert`, `meld`, and `decrease_key`, and $O(\log n)$ **worst-case** time for `delete` and `delete_min`.
 
 Reference: Gerth Stølting Brodal, George Lagogiannis, and Robert E. Tarjan. 2025. Strict Fibonacci Heaps. ACM Trans. Algorithms 21, 2, Article 15 (April 2025), 18 pages. https://doi.org/10.1145/3707692
 
+## Theoretical Background
+
+Standard Fibonacci Heaps (Fredman and Tarjan, 1987) are theoretically elegant but rely on **amortized** time bounds. They delay structural maintenance—such as tree consolidation—until a `delete_min` occurs. While this yields $O(1)$ *amortized* time for `insert` and `decrease_key`, individual operations can degrade to $O(n)$ worst-case time when large cascades of structural violations must be fixed simultaneously. This makes standard Fibonacci Heaps unsuitable for real-time systems where consistent latency is required.
+
+**Strict Fibonacci Heaps** solve this by strictly bounding the number of structural violations. Instead of deferring maintenance, a Strict Fibonacci Heap performs a constant, bounded number of structural "reductions" (tree linking, cutting, and rank adjustments) during every `insert`, `decrease_key`, and `delete_min` operation. By spreading the cleanup cost continuously, the data structure mathematically guarantees its theoretical time bounds in the **worst-case**, providing entirely predictable performance without sacrificing asymptotic efficiency.
+
 ## Key Features
 
-- **Zero Allocation (Malloc-Free):** Operates on an *intrusive* node design. The caller manages all memory for `node` structures. Internal heap bookkeeping (such as rank tracking) leverages mathematically bounded arrays (max depth ~100) embedded directly inside the `heap` struct.
+- **Zero Allocation (Malloc-Free):** Operates on an *intrusive* node design. The caller manages all memory for `node` structures. Internal heap bookkeeping (such as rank tracking) leverages mathematically bounded arrays (max depth 100) embedded directly inside the `heap` struct.
 - **Type-Safe Permutation via CMake:** C lacks generic typing, and `void*` incurs runtime overhead and type-safety loss. This library uses CMake `configure_file` templates to generate concrete, highly optimized permutations for any combination of key and value types (e.g., `sfh_int32_t_uint64_t_...`).
 - **Strict C89 & Doxygen:** 100% compliant with ISO C90 (C89). Compiles seamlessly on MSVC (2005+), GCC, Clang, and MinGW with aggressive flags (`-Wall -Wextra -pedantic` / `/RTC1`). Complete Doxygen coverage on all functions.
 - **Robust Error Percolation:** Every non-void, non-math function strictly returns an error enumeration (`_error_t`). Outputs are always passed via pointer arguments.
@@ -44,8 +49,8 @@ Tested extensively across Windows, Linux, and macOS using:
 
 ## Further Reading
 
-- [USAGE.md](USAGE.md) - For API examples and CMake integration.
-- [ARCHITECTURE.md](ARCHITECTURE.md) - For deep-dives into the $O(1)$ mechanics and zero-malloc strategy.
+- [USAGE.md](USAGE.md) - For API examples, proper memory management, and CMake integration.
+- [ARCHITECTURE.md](ARCHITECTURE.md) - For deep-dives into the $O(1)$ mechanics, Active/Passive nodes, and zero-malloc strategy.
 
 ## FetchContent Example
 

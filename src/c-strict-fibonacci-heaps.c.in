@@ -9,6 +9,11 @@
  * \brief Strict Fibonacci Heaps implementation.
  */
 
+#define SFH_CHECK_RC(expr) do { \
+    @PREFIX@_error_t _rc = (expr); \
+    if (_rc != @PREFIX@_SUCCESS) return _rc; \
+} while(0)
+
 #define PASSIVE_GROUP 0
 #define FREE_MULTIPLE_GROUP 1
 #define FREE_SINGLE_GROUP 2
@@ -16,6 +21,13 @@
 #define LOSS_ONE_MULTIPLE_GROUP 4
 #define LOSS_ONE_SINGLE_GROUP 5
 #define LOSS_TWO_GROUP 6
+#define SFH_NUM_FIX_GROUPS 7
+#define SFH_MAX_REDUCTIONS 20
+#define SFH_GROUP_MAX_COUNT 3
+#define SFH_PASSIVE_REDUCTIONS 3
+#define SFH_INSERT_REDUCTIONS 5
+#define SFH_DECREASE_KEY_REDUCTIONS 10
+#define SFH_MELD_REDUCTIONS 2
 
 /**
  * \brief Internal function node_lt.
@@ -56,11 +68,9 @@ static @PREFIX@_error_t node_is_active(const @PREFIX@_node_t *node, int *out_act
  * \return Internal return value.
  */
 static @PREFIX@_error_t node_is_passive(const @PREFIX@_node_t *node, int *out_passive) {
-    @PREFIX@_error_t rc;
     int active; /* LCOV_EXCL_LINE */ /* LCOV_EXCL_BR_LINE */
     if (!node || !out_passive) return @PREFIX@_ERR_NULL_ARG; /* LCOV_EXCL_LINE */ /* LCOV_EXCL_BR_LINE */
-    rc = node_is_active(node, &active); /* LCOV_EXCL_LINE */ /* LCOV_EXCL_BR_LINE */
-    if (rc != @PREFIX@_SUCCESS) return rc; /* LCOV_EXCL_LINE */ /* LCOV_EXCL_BR_LINE */
+    SFH_CHECK_RC(node_is_active(node, &active)); /* LCOV_EXCL_LINE */ /* LCOV_EXCL_BR_LINE */
     *out_passive = !active;
     return @PREFIX@_SUCCESS;
 }
@@ -72,11 +82,9 @@ static @PREFIX@_error_t node_is_passive(const @PREFIX@_node_t *node, int *out_pa
  * \return Internal return value.
  */
 static @PREFIX@_error_t node_is_free(const @PREFIX@_node_t *node, int *out_free) {
-    @PREFIX@_error_t rc;
     int active; /* LCOV_EXCL_LINE */ /* LCOV_EXCL_BR_LINE */
     if (!node || !out_free) return @PREFIX@_ERR_NULL_ARG; /* LCOV_EXCL_LINE */ /* LCOV_EXCL_BR_LINE */
-    rc = node_is_active(node, &active); /* LCOV_EXCL_LINE */ /* LCOV_EXCL_BR_LINE */
-    if (rc != @PREFIX@_SUCCESS) return rc; /* LCOV_EXCL_LINE */ /* LCOV_EXCL_BR_LINE */
+    SFH_CHECK_RC(node_is_active(node, &active)); /* LCOV_EXCL_LINE */ /* LCOV_EXCL_BR_LINE */
     *out_free = (active && node->is_free);
     return @PREFIX@_SUCCESS;
 }
@@ -88,11 +96,9 @@ static @PREFIX@_error_t node_is_free(const @PREFIX@_node_t *node, int *out_free)
  * \return Internal return value.
  */
 static @PREFIX@_error_t node_is_fixed(const @PREFIX@_node_t *node, int *out_fixed) {
-    @PREFIX@_error_t rc;
     int active; /* LCOV_EXCL_LINE */ /* LCOV_EXCL_BR_LINE */
     if (!node || !out_fixed) return @PREFIX@_ERR_NULL_ARG; /* LCOV_EXCL_LINE */ /* LCOV_EXCL_BR_LINE */
-    rc = node_is_active(node, &active); /* LCOV_EXCL_LINE */ /* LCOV_EXCL_BR_LINE */
-    if (rc != @PREFIX@_SUCCESS) return rc; /* LCOV_EXCL_LINE */ /* LCOV_EXCL_BR_LINE */
+    SFH_CHECK_RC(node_is_active(node, &active)); /* LCOV_EXCL_LINE */ /* LCOV_EXCL_BR_LINE */
     *out_fixed = (active && !node->is_free);
     return @PREFIX@_SUCCESS;
 }
@@ -114,6 +120,19 @@ static @PREFIX@_error_t node_heap(const @PREFIX@_node_t *node, @PREFIX@_heap_t *
  * \param node Internal parameter.
  * \return Internal return value.
  */
+static @PREFIX@_error_t fix_list_splice(@PREFIX@_node_t *h1, @PREFIX@_node_t *h2) {
+    @PREFIX@_node_t *t1;
+    @PREFIX@_node_t *t2;
+    if (!h1 || !h2) return @PREFIX@_SUCCESS;
+    t1 = h1->prev;
+    t2 = h2->prev;
+    h1->prev = t2;
+    t1->next = h2;
+    h2->prev = t1;
+    t2->next = h1;
+    return @PREFIX@_SUCCESS;
+}
+
 static @PREFIX@_error_t fix_list_unlink(@PREFIX@_node_t *node) { /* LCOV_EXCL_LINE */ /* LCOV_EXCL_BR_LINE */
     if (!node) return @PREFIX@_ERR_NULL_ARG; /* LCOV_EXCL_LINE */ /* LCOV_EXCL_BR_LINE */
     node->prev->next = node->next;
@@ -163,20 +182,19 @@ static @PREFIX@_error_t fix_list_insert_after(@PREFIX@_node_t *node, @PREFIX@_no
  * \return Internal return value.
  */
 static @PREFIX@_error_t fix_list_same_group(@PREFIX@_node_t *a, @PREFIX@_node_t *b, int *out_same) {
-    @PREFIX@_error_t rc;
     int a_free, b_free, a_fixed, b_fixed;
  /* LCOV_EXCL_LINE */ /* LCOV_EXCL_BR_LINE */
     if (!a || !b || !out_same) return @PREFIX@_ERR_NULL_ARG; /* LCOV_EXCL_LINE */ /* LCOV_EXCL_BR_LINE */
  /* LCOV_EXCL_LINE */ /* LCOV_EXCL_BR_LINE */
-    rc = node_is_free(a, &a_free); if (rc != @PREFIX@_SUCCESS) return rc; /* LCOV_EXCL_LINE */ /* LCOV_EXCL_BR_LINE */
-    rc = node_is_free(b, &b_free); if (rc != @PREFIX@_SUCCESS) return rc; /* LCOV_EXCL_LINE */ /* LCOV_EXCL_BR_LINE */
+    SFH_CHECK_RC(node_is_free(a, &a_free)); /* LCOV_EXCL_LINE */ /* LCOV_EXCL_BR_LINE */
+    SFH_CHECK_RC(node_is_free(b, &b_free)); /* LCOV_EXCL_LINE */ /* LCOV_EXCL_BR_LINE */
     if (a_free && b_free && a->rank == b->rank) {
         *out_same = 1;
         return @PREFIX@_SUCCESS;
     }
  /* LCOV_EXCL_LINE */ /* LCOV_EXCL_BR_LINE */
-    rc = node_is_fixed(a, &a_fixed); if (rc != @PREFIX@_SUCCESS) return rc; /* LCOV_EXCL_LINE */ /* LCOV_EXCL_BR_LINE */
-    rc = node_is_fixed(b, &b_fixed); if (rc != @PREFIX@_SUCCESS) return rc; /* LCOV_EXCL_LINE */ /* LCOV_EXCL_BR_LINE */
+    SFH_CHECK_RC(node_is_fixed(a, &a_fixed)); /* LCOV_EXCL_LINE */ /* LCOV_EXCL_BR_LINE */
+    SFH_CHECK_RC(node_is_fixed(b, &b_fixed)); /* LCOV_EXCL_LINE */ /* LCOV_EXCL_BR_LINE */
     if (a_fixed && b_fixed && a->rank == b->rank && a->loss == 1 && b->loss == 1) { /* LCOV_EXCL_LINE */ /* LCOV_EXCL_BR_LINE */
         *out_same = 1;
         return @PREFIX@_SUCCESS;
@@ -215,7 +233,7 @@ static @PREFIX@_error_t fix_list_head(@PREFIX@_heap_t *heap, @PREFIX@_node_t **o
  * \return Internal return value.
  */
 static @PREFIX@_error_t fix_list_insertion_point(@PREFIX@_heap_t *heap, int group, @PREFIX@_node_t **out_node) {
-    @PREFIX@_node_t* points[7];
+    @PREFIX@_node_t* points[SFH_NUM_FIX_GROUPS];
     int i;
  /* LCOV_EXCL_LINE */ /* LCOV_EXCL_BR_LINE */
     if (!heap || !out_node) return @PREFIX@_ERR_NULL_ARG; /* LCOV_EXCL_LINE */ /* LCOV_EXCL_BR_LINE */
@@ -228,8 +246,8 @@ static @PREFIX@_error_t fix_list_insertion_point(@PREFIX@_heap_t *heap, int grou
     points[5] = heap->fix_loss_one_single;
     points[6] = heap->fix_loss_two;
 
-    for (i = 0; i < 7; ++i) {
-        int idx = (group + i) % 7;
+    for (i = 0; i < SFH_NUM_FIX_GROUPS; ++i) {
+        int idx = (group + i) % SFH_NUM_FIX_GROUPS;
         if (points[idx]) {
             *out_node = points[idx];
             return @PREFIX@_SUCCESS;
@@ -248,16 +266,13 @@ static @PREFIX@_error_t fix_list_insertion_point(@PREFIX@_heap_t *heap, int grou
  * \return Internal return value.
  */
 static @PREFIX@_error_t fix_list_insert(@PREFIX@_heap_t *heap, int group, @PREFIX@_node_t *node) {
-    @PREFIX@_error_t rc;
     @PREFIX@_node_t *succ;
  /* LCOV_EXCL_LINE */ /* LCOV_EXCL_BR_LINE */
     if (!heap || !node) return @PREFIX@_ERR_NULL_ARG; /* LCOV_EXCL_LINE */ /* LCOV_EXCL_BR_LINE */
 
-    rc = fix_list_insertion_point(heap, group, &succ); /* LCOV_EXCL_LINE */ /* LCOV_EXCL_BR_LINE */
-    if (rc != @PREFIX@_SUCCESS) return rc; /* LCOV_EXCL_LINE */ /* LCOV_EXCL_BR_LINE */
+    SFH_CHECK_RC(fix_list_insertion_point(heap, group, &succ)); /* LCOV_EXCL_LINE */ /* LCOV_EXCL_BR_LINE */
 
-    rc = fix_list_insert_before(node, succ); /* LCOV_EXCL_LINE */ /* LCOV_EXCL_BR_LINE */
-    if (rc != @PREFIX@_SUCCESS) return rc; /* LCOV_EXCL_LINE */ /* LCOV_EXCL_BR_LINE */
+    SFH_CHECK_RC(fix_list_insert_before(node, succ)); /* LCOV_EXCL_LINE */ /* LCOV_EXCL_BR_LINE */
 
     if (group == FREE_MULTIPLE_GROUP) heap->fix_free_multiple = node;
     else if (group == FREE_SINGLE_GROUP) heap->fix_free_single = node;
@@ -278,7 +293,6 @@ static @PREFIX@_error_t fix_list_insert(@PREFIX@_heap_t *heap, int group, @PREFI
  * \return Internal return value.
  */
 static @PREFIX@_error_t fix_list_group(@PREFIX@_node_t *node, @PREFIX@_node_t *head, int *count, @PREFIX@_node_t **first) {
-    @PREFIX@_error_t rc;
     @PREFIX@_node_t *last;
     int same;
  /* LCOV_EXCL_LINE */ /* LCOV_EXCL_BR_LINE */
@@ -288,17 +302,15 @@ static @PREFIX@_error_t fix_list_group(@PREFIX@_node_t *node, @PREFIX@_node_t *h
     *count = 1;
     *first = node;
 
-    while (*count < 3 && *first != head) {
-        rc = fix_list_same_group(node, (*first)->prev, &same); /* LCOV_EXCL_LINE */ /* LCOV_EXCL_BR_LINE */
-        if (rc != @PREFIX@_SUCCESS) return rc; /* LCOV_EXCL_LINE */ /* LCOV_EXCL_BR_LINE */
+    while (*count < SFH_GROUP_MAX_COUNT && *first != head) {
+        SFH_CHECK_RC(fix_list_same_group(node, (*first)->prev, &same)); /* LCOV_EXCL_LINE */ /* LCOV_EXCL_BR_LINE */
         if (!same) break;
         *first = (*first)->prev;
         (*count)++;
     }
 
-    while (*count < 3 && last->next != head) {
-        rc = fix_list_same_group(node, last->next, &same); /* LCOV_EXCL_LINE */ /* LCOV_EXCL_BR_LINE */
-        if (rc != @PREFIX@_SUCCESS) return rc; /* LCOV_EXCL_LINE */ /* LCOV_EXCL_BR_LINE */
+    while (*count < SFH_GROUP_MAX_COUNT && last->next != head) {
+        SFH_CHECK_RC(fix_list_same_group(node, last->next, &same)); /* LCOV_EXCL_LINE */ /* LCOV_EXCL_BR_LINE */
         if (!same) break;
         last = last->next;
         (*count)++;
@@ -330,95 +342,103 @@ static @PREFIX@_error_t fix_list_retire(@PREFIX@_heap_t *heap) { /* LCOV_EXCL_LI
  * \param node Internal parameter.
  * \return Internal return value.
  */
+
+static @PREFIX@_error_t fix_list_add_free(@PREFIX@_heap_t *heap, @PREFIX@_node_t *node, @PREFIX@_node_t *head) {
+    @PREFIX@_node_t *first = node->rank->free_node;
+    if (first == NULL) {
+        node->rank->free_node = node;
+        SFH_CHECK_RC(fix_list_insert(heap, FREE_SINGLE_GROUP, node)); /* LCOV_EXCL_LINE */ /* LCOV_EXCL_BR_LINE */
+    } else {
+        int count;
+        @PREFIX@_node_t *f;
+        SFH_CHECK_RC(fix_list_group(first, head, &count, &f)); /* LCOV_EXCL_LINE */ /* LCOV_EXCL_BR_LINE */
+
+        if (count >= 2) {
+            SFH_CHECK_RC(fix_list_insert_after(node, first)); /* LCOV_EXCL_LINE */ /* LCOV_EXCL_BR_LINE */
+        } else {
+            if (heap->fix_free_single == first) {
+                int next_is_free = 0;
+                if (first->next != head) {
+                    SFH_CHECK_RC(node_is_free(first->next, &next_is_free)); /* LCOV_EXCL_LINE */ /* LCOV_EXCL_BR_LINE */
+                }
+                if (next_is_free) {
+                    heap->fix_free_single = first->next;
+                } else {
+                    heap->fix_free_single = NULL;
+                }
+            } /* LCOV_EXCL_LINE */ /* LCOV_EXCL_BR_LINE */
+            SFH_CHECK_RC(fix_list_unlink(first)); /* LCOV_EXCL_LINE */ /* LCOV_EXCL_BR_LINE */
+            SFH_CHECK_RC(fix_list_insert(heap, FREE_MULTIPLE_GROUP, node)); /* LCOV_EXCL_LINE */ /* LCOV_EXCL_BR_LINE */
+            SFH_CHECK_RC(fix_list_insert(heap, FREE_MULTIPLE_GROUP, first)); /* LCOV_EXCL_LINE */ /* LCOV_EXCL_BR_LINE */
+            node->rank->free_node = first;
+        }
+    }
+    return @PREFIX@_SUCCESS;
+}
+
+static @PREFIX@_error_t fix_list_add_fixed_loss_zero(@PREFIX@_heap_t *heap, @PREFIX@_node_t *node) {
+    SFH_CHECK_RC(fix_list_insert(heap, LOSS_ZERO_GROUP, node)); /* LCOV_EXCL_LINE */ /* LCOV_EXCL_BR_LINE */
+    return @PREFIX@_SUCCESS;
+}
+
+static @PREFIX@_error_t fix_list_add_fixed_loss_two(@PREFIX@_heap_t *heap, @PREFIX@_node_t *node) {
+    SFH_CHECK_RC(fix_list_insert(heap, LOSS_TWO_GROUP, node)); /* LCOV_EXCL_LINE */ /* LCOV_EXCL_BR_LINE */
+    return @PREFIX@_SUCCESS;
+}
+
+static @PREFIX@_error_t fix_list_add_fixed_loss_one(@PREFIX@_heap_t *heap, @PREFIX@_node_t *node, @PREFIX@_node_t *head) {
+    @PREFIX@_node_t *first = node->rank->loss_one_node;
+    if (first == NULL) {
+        node->rank->loss_one_node = node;
+        SFH_CHECK_RC(fix_list_insert(heap, LOSS_ONE_SINGLE_GROUP, node)); /* LCOV_EXCL_LINE */ /* LCOV_EXCL_BR_LINE */
+    } else {
+        int count;
+        @PREFIX@_node_t *f;
+        SFH_CHECK_RC(fix_list_group(first, head, &count, &f)); /* LCOV_EXCL_LINE */ /* LCOV_EXCL_BR_LINE */
+
+        if (count >= 2) { /* LCOV_EXCL_BR_LINE */ /* LCOV_EXCL_LINE */
+            SFH_CHECK_RC(fix_list_insert_after(node, first)); /* LCOV_EXCL_LINE */ /* LCOV_EXCL_BR_LINE */
+        } else {
+            if (heap->fix_loss_one_single == first) {
+                int next_is_fixed = 0;
+                if (first->next != head) { /* LCOV_EXCL_LINE */ /* LCOV_EXCL_BR_LINE */
+                    SFH_CHECK_RC(node_is_fixed(first->next, &next_is_fixed)); /* LCOV_EXCL_LINE */ /* LCOV_EXCL_BR_LINE */
+                }
+                if (next_is_fixed && first->next->loss == 1) { /* LCOV_EXCL_LINE */ /* LCOV_EXCL_BR_LINE */
+                    heap->fix_loss_one_single = first->next;
+                } else {
+                    /* LCOV_EXCL_START */
+                    heap->fix_loss_one_single = NULL; /* LCOV_EXCL_LINE */ /* LCOV_EXCL_BR_LINE */
+                    /* LCOV_EXCL_STOP */
+                }
+            } /* LCOV_EXCL_LINE */ /* LCOV_EXCL_BR_LINE */
+            SFH_CHECK_RC(fix_list_unlink(first)); /* LCOV_EXCL_LINE */ /* LCOV_EXCL_BR_LINE */
+            SFH_CHECK_RC(fix_list_insert(heap, LOSS_ONE_MULTIPLE_GROUP, node)); /* LCOV_EXCL_LINE */ /* LCOV_EXCL_BR_LINE */
+            SFH_CHECK_RC(fix_list_insert(heap, LOSS_ONE_MULTIPLE_GROUP, first)); /* LCOV_EXCL_LINE */ /* LCOV_EXCL_BR_LINE */
+        }
+    }
+    return @PREFIX@_SUCCESS;
+}
+
 static @PREFIX@_error_t fix_list_add(@PREFIX@_heap_t *heap, @PREFIX@_node_t *node) {
-    @PREFIX@_error_t rc;
     @PREFIX@_node_t *head;
     int is_free;
  /* LCOV_EXCL_LINE */ /* LCOV_EXCL_BR_LINE */
     if (!heap || !node) return @PREFIX@_ERR_NULL_ARG; /* LCOV_EXCL_LINE */ /* LCOV_EXCL_BR_LINE */
 
-    rc = fix_list_head(heap, &head); /* LCOV_EXCL_LINE */ /* LCOV_EXCL_BR_LINE */
-    if (rc != @PREFIX@_SUCCESS) return rc; /* LCOV_EXCL_LINE */ /* LCOV_EXCL_BR_LINE */
+    SFH_CHECK_RC(fix_list_head(heap, &head)); /* LCOV_EXCL_LINE */ /* LCOV_EXCL_BR_LINE */
 
-    rc = node_is_free(node, &is_free); /* LCOV_EXCL_LINE */ /* LCOV_EXCL_BR_LINE */
-    if (rc != @PREFIX@_SUCCESS) return rc; /* LCOV_EXCL_LINE */ /* LCOV_EXCL_BR_LINE */
+    SFH_CHECK_RC(node_is_free(node, &is_free)); /* LCOV_EXCL_LINE */ /* LCOV_EXCL_BR_LINE */
 
-    if (is_free) {
-        @PREFIX@_node_t *first = node->rank->free_node;
-        if (first == NULL) {
-            node->rank->free_node = node;
-            rc = fix_list_insert(heap, FREE_SINGLE_GROUP, node); /* LCOV_EXCL_LINE */ /* LCOV_EXCL_BR_LINE */
-            if (rc != @PREFIX@_SUCCESS) return rc; /* LCOV_EXCL_LINE */ /* LCOV_EXCL_BR_LINE */
-        } else {
-            int count;
-            @PREFIX@_node_t *f;
-            rc = fix_list_group(first, head, &count, &f); /* LCOV_EXCL_LINE */ /* LCOV_EXCL_BR_LINE */
-            if (rc != @PREFIX@_SUCCESS) return rc; /* LCOV_EXCL_LINE */ /* LCOV_EXCL_BR_LINE */
-
-            if (count >= 2) {
-                rc = fix_list_insert_after(node, first); /* LCOV_EXCL_LINE */ /* LCOV_EXCL_BR_LINE */
-                if (rc != @PREFIX@_SUCCESS) return rc; /* LCOV_EXCL_LINE */ /* LCOV_EXCL_BR_LINE */
-            } else {
-                if (heap->fix_free_single == first) {
-                    int next_is_free = 0;
-                    if (first->next != head) {
-                        rc = node_is_free(first->next, &next_is_free); /* LCOV_EXCL_LINE */ /* LCOV_EXCL_BR_LINE */
-                        if (rc != @PREFIX@_SUCCESS) return rc; /* LCOV_EXCL_LINE */ /* LCOV_EXCL_BR_LINE */
-                    }
-                    if (next_is_free) {
-                        heap->fix_free_single = first->next;
-                    } else {
-                        heap->fix_free_single = NULL;
-                    }
-                } /* LCOV_EXCL_LINE */ /* LCOV_EXCL_BR_LINE */
-                rc = fix_list_unlink(first); if (rc != @PREFIX@_SUCCESS) return rc; /* LCOV_EXCL_LINE */ /* LCOV_EXCL_BR_LINE */
-                rc = fix_list_insert(heap, FREE_MULTIPLE_GROUP, node); if (rc != @PREFIX@_SUCCESS) return rc; /* LCOV_EXCL_LINE */ /* LCOV_EXCL_BR_LINE */
-                rc = fix_list_insert(heap, FREE_MULTIPLE_GROUP, first); if (rc != @PREFIX@_SUCCESS) return rc; /* LCOV_EXCL_LINE */ /* LCOV_EXCL_BR_LINE */
-                node->rank->free_node = first;
-            }
-        }
+        if (is_free) {
+        SFH_CHECK_RC(fix_list_add_free(heap, node, head));
     } else {
         if (node->loss == 0) {
-            rc = fix_list_insert(heap, LOSS_ZERO_GROUP, node); /* LCOV_EXCL_LINE */ /* LCOV_EXCL_BR_LINE */
-            if (rc != @PREFIX@_SUCCESS) return rc; /* LCOV_EXCL_LINE */ /* LCOV_EXCL_BR_LINE */
+            SFH_CHECK_RC(fix_list_add_fixed_loss_zero(heap, node));
         } else if (node->loss >= 2) { /* LCOV_EXCL_BR_LINE */ /* LCOV_EXCL_LINE */
-            rc = fix_list_insert(heap, LOSS_TWO_GROUP, node); /* LCOV_EXCL_LINE */ /* LCOV_EXCL_BR_LINE */
-            if (rc != @PREFIX@_SUCCESS) return rc; /* LCOV_EXCL_LINE */ /* LCOV_EXCL_BR_LINE */
+            SFH_CHECK_RC(fix_list_add_fixed_loss_two(heap, node));
         } else {
-            @PREFIX@_node_t *first = node->rank->loss_one_node;
-            if (first == NULL) {
-                node->rank->loss_one_node = node;
-                rc = fix_list_insert(heap, LOSS_ONE_SINGLE_GROUP, node); /* LCOV_EXCL_LINE */ /* LCOV_EXCL_BR_LINE */
-                if (rc != @PREFIX@_SUCCESS) return rc; /* LCOV_EXCL_LINE */ /* LCOV_EXCL_BR_LINE */
-            } else {
-                int count;
-                @PREFIX@_node_t *f;
-                rc = fix_list_group(first, head, &count, &f); /* LCOV_EXCL_LINE */ /* LCOV_EXCL_BR_LINE */
-                if (rc != @PREFIX@_SUCCESS) return rc; /* LCOV_EXCL_LINE */ /* LCOV_EXCL_BR_LINE */
-
-                if (count >= 2) { /* LCOV_EXCL_BR_LINE */ /* LCOV_EXCL_LINE */
-                    rc = fix_list_insert_after(node, first); /* LCOV_EXCL_LINE */ /* LCOV_EXCL_BR_LINE */
-                    if (rc != @PREFIX@_SUCCESS) return rc; /* LCOV_EXCL_LINE */ /* LCOV_EXCL_BR_LINE */
-                } else {
-                    if (heap->fix_loss_one_single == first) {
-                        int next_is_fixed = 0;
-                        if (first->next != head) { /* LCOV_EXCL_LINE */ /* LCOV_EXCL_BR_LINE */
-                            rc = node_is_fixed(first->next, &next_is_fixed); /* LCOV_EXCL_LINE */ /* LCOV_EXCL_BR_LINE */
-                            if (rc != @PREFIX@_SUCCESS) return rc; /* LCOV_EXCL_LINE */ /* LCOV_EXCL_BR_LINE */
-                        }
-                        if (next_is_fixed && first->next->loss == 1) { /* LCOV_EXCL_LINE */ /* LCOV_EXCL_BR_LINE */
-                            heap->fix_loss_one_single = first->next;
-                        } else {
-                            /* LCOV_EXCL_START */
-                            heap->fix_loss_one_single = NULL; /* LCOV_EXCL_LINE */ /* LCOV_EXCL_BR_LINE */
-                            /* LCOV_EXCL_STOP */
-                        }
-                    } /* LCOV_EXCL_LINE */ /* LCOV_EXCL_BR_LINE */
-                    rc = fix_list_unlink(first); if (rc != @PREFIX@_SUCCESS) return rc; /* LCOV_EXCL_LINE */ /* LCOV_EXCL_BR_LINE */
-                    rc = fix_list_insert(heap, LOSS_ONE_MULTIPLE_GROUP, node); if (rc != @PREFIX@_SUCCESS) return rc; /* LCOV_EXCL_LINE */ /* LCOV_EXCL_BR_LINE */
-                    rc = fix_list_insert(heap, LOSS_ONE_MULTIPLE_GROUP, first); if (rc != @PREFIX@_SUCCESS) return rc; /* LCOV_EXCL_LINE */ /* LCOV_EXCL_BR_LINE */
-                }
-            }
+            SFH_CHECK_RC(fix_list_add_fixed_loss_one(heap, node, head));
         }
     }
     return @PREFIX@_SUCCESS;
@@ -430,8 +450,106 @@ static @PREFIX@_error_t fix_list_add(@PREFIX@_heap_t *heap, @PREFIX@_node_t *nod
  * \param node Internal parameter.
  * \return Internal return value.
  */
+
+static @PREFIX@_error_t fix_list_remove_passive(@PREFIX@_heap_t *heap, @PREFIX@_node_t *node, @PREFIX@_node_t *head, @PREFIX@_node_t *succ) {
+    if (heap->fix_passive == node) {
+        int succ_is_passive = 0;
+        if (succ != head) { /* LCOV_EXCL_LINE */ /* LCOV_EXCL_BR_LINE */
+            SFH_CHECK_RC(node_is_passive(succ, &succ_is_passive)); /* LCOV_EXCL_LINE */ /* LCOV_EXCL_BR_LINE */
+        }
+        if (succ_is_passive) heap->fix_passive = succ;
+        else heap->fix_passive = NULL;
+    }
+    return @PREFIX@_SUCCESS;
+}
+
+static @PREFIX@_error_t fix_list_remove_free(@PREFIX@_heap_t *heap, @PREFIX@_node_t *node, @PREFIX@_node_t *head, @PREFIX@_node_t *succ) {
+    int count;
+    @PREFIX@_node_t *first; /* LCOV_EXCL_LINE */ /* LCOV_EXCL_BR_LINE */
+    SFH_CHECK_RC(fix_list_group(node, head, &count, &first)); /* LCOV_EXCL_LINE */ /* LCOV_EXCL_BR_LINE */
+    if (count == 1) {
+        if (heap->fix_free_single == node) {
+            int succ_is_free = 0;
+            if (succ != head) { /* LCOV_EXCL_LINE */ /* LCOV_EXCL_BR_LINE */
+                SFH_CHECK_RC(node_is_free(succ, &succ_is_free)); /* LCOV_EXCL_LINE */ /* LCOV_EXCL_BR_LINE */
+            }
+            if (succ_is_free) heap->fix_free_single = succ;
+            else heap->fix_free_single = NULL;
+        }
+    } else if (count >= SFH_GROUP_MAX_COUNT) {
+        if (heap->fix_free_multiple == node) heap->fix_free_multiple = succ;
+    } else {
+        @PREFIX@_node_t *other = (first != node) ? first : succ;
+        if (heap->fix_free_multiple == first) {
+            int f_free = 0, fn_free = 0;
+            first = first->next->next; /* LCOV_EXCL_LINE */ /* LCOV_EXCL_BR_LINE */
+            if (first != head) { SFH_CHECK_RC(node_is_free(first, &f_free)); } /* LCOV_EXCL_LINE */ /* LCOV_EXCL_BR_LINE */
+            if (first->next != head) { SFH_CHECK_RC(node_is_free(first->next, &fn_free)); } /* LCOV_EXCL_LINE */ /* LCOV_EXCL_BR_LINE */
+            if (f_free && fn_free && first->rank == first->next->rank) {
+                heap->fix_free_multiple = first;
+            } else {
+                heap->fix_free_multiple = NULL;
+            }
+        } /* LCOV_EXCL_LINE */ /* LCOV_EXCL_BR_LINE */
+        SFH_CHECK_RC(fix_list_unlink(other)); /* LCOV_EXCL_LINE */ /* LCOV_EXCL_BR_LINE */
+        SFH_CHECK_RC(fix_list_insert(heap, FREE_SINGLE_GROUP, other)); /* LCOV_EXCL_LINE */ /* LCOV_EXCL_BR_LINE */
+    }
+    return @PREFIX@_SUCCESS;
+}
+
+static @PREFIX@_error_t fix_list_remove_loss_zero(@PREFIX@_heap_t *heap, @PREFIX@_node_t *node, @PREFIX@_node_t *head, @PREFIX@_node_t *succ) {
+    if (heap->fix_loss_zero == node) {
+        int succ_is_fixed = 0; /* LCOV_EXCL_LINE */ /* LCOV_EXCL_BR_LINE */
+        if (succ != head) { SFH_CHECK_RC(node_is_fixed(succ, &succ_is_fixed)); } /* LCOV_EXCL_LINE */ /* LCOV_EXCL_BR_LINE */
+        if (succ_is_fixed && succ->loss == 0) heap->fix_loss_zero = succ; /* LCOV_EXCL_LINE */ /* LCOV_EXCL_BR_LINE */
+        else heap->fix_loss_zero = NULL;
+    }
+    return @PREFIX@_SUCCESS;
+}
+
+static @PREFIX@_error_t fix_list_remove_loss_two(@PREFIX@_heap_t *heap, @PREFIX@_node_t *node, @PREFIX@_node_t *head, @PREFIX@_node_t *succ) {
+    if (heap->fix_loss_two == node) { /* LCOV_EXCL_LINE */ /* LCOV_EXCL_BR_LINE */
+        int succ_is_fixed = 0; /* LCOV_EXCL_LINE */ /* LCOV_EXCL_BR_LINE */
+        if (succ != head) { SFH_CHECK_RC(node_is_fixed(succ, &succ_is_fixed)); } /* LCOV_EXCL_LINE */ /* LCOV_EXCL_BR_LINE */
+        if (succ_is_fixed && succ->loss >= 2) heap->fix_loss_two = succ; /* LCOV_EXCL_LINE */ /* LCOV_EXCL_BR_LINE */
+        else heap->fix_loss_two = NULL; /* LCOV_EXCL_BR_LINE */ /* LCOV_EXCL_LINE */
+    }
+    return @PREFIX@_SUCCESS;
+}
+
+static @PREFIX@_error_t fix_list_remove_loss_one(@PREFIX@_heap_t *heap, @PREFIX@_node_t *node, @PREFIX@_node_t *head, @PREFIX@_node_t *succ) {
+    int count;
+    @PREFIX@_node_t *first; /* LCOV_EXCL_LINE */ /* LCOV_EXCL_BR_LINE */
+    SFH_CHECK_RC(fix_list_group(node, head, &count, &first)); /* LCOV_EXCL_LINE */ /* LCOV_EXCL_BR_LINE */
+    if (count == 1) {
+        if (heap->fix_loss_one_single == node) {
+            int succ_is_fixed = 0; /* LCOV_EXCL_LINE */ /* LCOV_EXCL_BR_LINE */
+            if (succ != head) { SFH_CHECK_RC(node_is_fixed(succ, &succ_is_fixed)); } /* LCOV_EXCL_LINE */ /* LCOV_EXCL_BR_LINE */
+            if (succ_is_fixed && succ->loss == 1) heap->fix_loss_one_single = succ; /* LCOV_EXCL_BR_LINE */ /* LCOV_EXCL_LINE */
+            else heap->fix_loss_one_single = NULL;
+        }
+    } else if (count >= SFH_GROUP_MAX_COUNT) { /* LCOV_EXCL_BR_LINE */ /* LCOV_EXCL_LINE */
+        if (heap->fix_loss_one_multiple == node) heap->fix_loss_one_multiple = succ; /* LCOV_EXCL_BR_LINE */ /* LCOV_EXCL_LINE */
+    } else {
+        @PREFIX@_node_t *other = (first != node) ? first : succ;
+        if (heap->fix_loss_one_multiple == first) { /* LCOV_EXCL_BR_LINE */ /* LCOV_EXCL_LINE */
+            int f_fixed = 0, fn_fixed = 0;
+            first = first->next->next; /* LCOV_EXCL_LINE */ /* LCOV_EXCL_BR_LINE */
+            if (first != head) { SFH_CHECK_RC(node_is_fixed(first, &f_fixed)); } /* LCOV_EXCL_LINE */ /* LCOV_EXCL_BR_LINE */
+            if (first->next != head) { SFH_CHECK_RC(node_is_fixed(first->next, &fn_fixed)); } /* LCOV_EXCL_LINE */ /* LCOV_EXCL_BR_LINE */
+            if (f_fixed && first->loss == 1 && fn_fixed && first->next->loss == 1 && first->rank == first->next->rank) { /* LCOV_EXCL_LINE */ /* LCOV_EXCL_BR_LINE */
+                heap->fix_loss_one_multiple = first; /* LCOV_EXCL_BR_LINE */ /* LCOV_EXCL_LINE */
+            } else {
+                heap->fix_loss_one_multiple = NULL;
+            }
+        } /* LCOV_EXCL_LINE */ /* LCOV_EXCL_BR_LINE */
+        SFH_CHECK_RC(fix_list_unlink(other)); /* LCOV_EXCL_LINE */ /* LCOV_EXCL_BR_LINE */
+        SFH_CHECK_RC(fix_list_insert(heap, LOSS_ONE_SINGLE_GROUP, other)); /* LCOV_EXCL_LINE */ /* LCOV_EXCL_BR_LINE */
+    }
+    return @PREFIX@_SUCCESS;
+}
+
 static @PREFIX@_error_t fix_list_remove(@PREFIX@_heap_t *heap, @PREFIX@_node_t *node) {
-    @PREFIX@_error_t rc;
     @PREFIX@_node_t *succ;
     @PREFIX@_node_t *head;
     int is_active, is_passive, is_free;
@@ -439,13 +557,13 @@ static @PREFIX@_error_t fix_list_remove(@PREFIX@_heap_t *heap, @PREFIX@_node_t *
     if (!heap || !node) return @PREFIX@_ERR_NULL_ARG; /* LCOV_EXCL_LINE */ /* LCOV_EXCL_BR_LINE */
 
     succ = node->next; /* LCOV_EXCL_LINE */ /* LCOV_EXCL_BR_LINE */
-    rc = fix_list_head(heap, &head); if (rc != @PREFIX@_SUCCESS) return rc; /* LCOV_EXCL_LINE */ /* LCOV_EXCL_BR_LINE */
-    rc = node_is_active(node, &is_active); if (rc != @PREFIX@_SUCCESS) return rc; /* LCOV_EXCL_LINE */ /* LCOV_EXCL_BR_LINE */
+    SFH_CHECK_RC(fix_list_head(heap, &head)); /* LCOV_EXCL_LINE */ /* LCOV_EXCL_BR_LINE */
+    SFH_CHECK_RC(node_is_active(node, &is_active)); /* LCOV_EXCL_LINE */ /* LCOV_EXCL_BR_LINE */
 
     if (is_active && node->rank->free_node == node) {
         int succ_is_free = 0;
         if (succ != head) { /* LCOV_EXCL_LINE */ /* LCOV_EXCL_BR_LINE */
-            rc = node_is_free(succ, &succ_is_free); if (rc != @PREFIX@_SUCCESS) return rc; /* LCOV_EXCL_LINE */ /* LCOV_EXCL_BR_LINE */
+            SFH_CHECK_RC(node_is_free(succ, &succ_is_free)); /* LCOV_EXCL_LINE */ /* LCOV_EXCL_BR_LINE */
         }
         if (succ_is_free && succ->rank == node->rank) {
             node->rank->free_node = succ;
@@ -457,7 +575,7 @@ static @PREFIX@_error_t fix_list_remove(@PREFIX@_heap_t *heap, @PREFIX@_node_t *
     if (is_active && node->rank->loss_one_node == node) {
         int succ_is_fixed = 0;
         if (succ != head) { /* LCOV_EXCL_LINE */ /* LCOV_EXCL_BR_LINE */
-            rc = node_is_fixed(succ, &succ_is_fixed); if (rc != @PREFIX@_SUCCESS) return rc; /* LCOV_EXCL_LINE */ /* LCOV_EXCL_BR_LINE */
+            SFH_CHECK_RC(node_is_fixed(succ, &succ_is_fixed)); /* LCOV_EXCL_LINE */ /* LCOV_EXCL_BR_LINE */
         }
         if (succ_is_fixed && succ->loss == 1 && succ->rank == node->rank) { /* LCOV_EXCL_BR_LINE */ /* LCOV_EXCL_LINE */
             node->rank->loss_one_node = succ;
@@ -467,98 +585,25 @@ static @PREFIX@_error_t fix_list_remove(@PREFIX@_heap_t *heap, @PREFIX@_node_t *
     }
 
     if (heap->size == 1) { /* LCOV_EXCL_LINE */ /* LCOV_EXCL_BR_LINE */
-        rc = fix_list_retire(heap); if (rc != @PREFIX@_SUCCESS) return rc; /* LCOV_EXCL_LINE */ /* LCOV_EXCL_BR_LINE */
+        SFH_CHECK_RC(fix_list_retire(heap)); /* LCOV_EXCL_LINE */ /* LCOV_EXCL_BR_LINE */
     } else { /* LCOV_EXCL_LINE */ /* LCOV_EXCL_BR_LINE */
-        rc = node_is_passive(node, &is_passive); if (rc != @PREFIX@_SUCCESS) return rc; /* LCOV_EXCL_LINE */ /* LCOV_EXCL_BR_LINE */
-        rc = node_is_free(node, &is_free); if (rc != @PREFIX@_SUCCESS) return rc; /* LCOV_EXCL_LINE */ /* LCOV_EXCL_BR_LINE */
+        SFH_CHECK_RC(node_is_passive(node, &is_passive)); /* LCOV_EXCL_LINE */ /* LCOV_EXCL_BR_LINE */
+        SFH_CHECK_RC(node_is_free(node, &is_free)); /* LCOV_EXCL_LINE */ /* LCOV_EXCL_BR_LINE */
 
         if (is_passive) {
-            if (heap->fix_passive == node) {
-                int succ_is_passive = 0;
-                if (succ != head) { /* LCOV_EXCL_LINE */ /* LCOV_EXCL_BR_LINE */
-                    rc = node_is_passive(succ, &succ_is_passive); if (rc != @PREFIX@_SUCCESS) return rc; /* LCOV_EXCL_LINE */ /* LCOV_EXCL_BR_LINE */
-                }
-                if (succ_is_passive) heap->fix_passive = succ;
-                else heap->fix_passive = NULL;
-            }
+            SFH_CHECK_RC(fix_list_remove_passive(heap, node, head, succ));
         } else if (is_free) {
-            int count;
-            @PREFIX@_node_t *first; /* LCOV_EXCL_LINE */ /* LCOV_EXCL_BR_LINE */
-            rc = fix_list_group(node, head, &count, &first); if (rc != @PREFIX@_SUCCESS) return rc; /* LCOV_EXCL_LINE */ /* LCOV_EXCL_BR_LINE */
-            if (count == 1) {
-                if (heap->fix_free_single == node) {
-                    int succ_is_free = 0;
-                    if (succ != head) { /* LCOV_EXCL_LINE */ /* LCOV_EXCL_BR_LINE */
-                        rc = node_is_free(succ, &succ_is_free); if (rc != @PREFIX@_SUCCESS) return rc; /* LCOV_EXCL_LINE */ /* LCOV_EXCL_BR_LINE */
-                    }
-                    if (succ_is_free) heap->fix_free_single = succ;
-                    else heap->fix_free_single = NULL;
-                }
-            } else if (count >= 3) {
-                if (heap->fix_free_multiple == node) heap->fix_free_multiple = succ;
-            } else {
-                @PREFIX@_node_t *other = (first != node) ? first : succ;
-                if (heap->fix_free_multiple == first) {
-                    int f_free = 0, fn_free = 0;
-                    first = first->next->next; /* LCOV_EXCL_LINE */ /* LCOV_EXCL_BR_LINE */
-                    if (first != head) { rc = node_is_free(first, &f_free); if (rc != @PREFIX@_SUCCESS) return rc; } /* LCOV_EXCL_LINE */ /* LCOV_EXCL_BR_LINE */
-                    if (first->next != head) { rc = node_is_free(first->next, &fn_free); if (rc != @PREFIX@_SUCCESS) return rc; } /* LCOV_EXCL_LINE */ /* LCOV_EXCL_BR_LINE */
-                    if (f_free && fn_free && first->rank == first->next->rank) {
-                        heap->fix_free_multiple = first;
-                    } else {
-                        heap->fix_free_multiple = NULL;
-                    }
-                } /* LCOV_EXCL_LINE */ /* LCOV_EXCL_BR_LINE */
-                rc = fix_list_unlink(other); if (rc != @PREFIX@_SUCCESS) return rc; /* LCOV_EXCL_LINE */ /* LCOV_EXCL_BR_LINE */
-                rc = fix_list_insert(heap, FREE_SINGLE_GROUP, other); if (rc != @PREFIX@_SUCCESS) return rc; /* LCOV_EXCL_LINE */ /* LCOV_EXCL_BR_LINE */
-            }
+            SFH_CHECK_RC(fix_list_remove_free(heap, node, head, succ));
         } else {
             if (node->loss == 0) {
-                if (heap->fix_loss_zero == node) {
-                    int succ_is_fixed = 0; /* LCOV_EXCL_LINE */ /* LCOV_EXCL_BR_LINE */
-                    if (succ != head) { rc = node_is_fixed(succ, &succ_is_fixed); if (rc != @PREFIX@_SUCCESS) return rc; } /* LCOV_EXCL_LINE */ /* LCOV_EXCL_BR_LINE */
-                    if (succ_is_fixed && succ->loss == 0) heap->fix_loss_zero = succ; /* LCOV_EXCL_LINE */ /* LCOV_EXCL_BR_LINE */
-                    else heap->fix_loss_zero = NULL;
-                }
+                SFH_CHECK_RC(fix_list_remove_loss_zero(heap, node, head, succ));
             } else if (node->loss >= 2) { /* LCOV_EXCL_BR_LINE */ /* LCOV_EXCL_LINE */
-                if (heap->fix_loss_two == node) { /* LCOV_EXCL_LINE */ /* LCOV_EXCL_BR_LINE */
-                    int succ_is_fixed = 0; /* LCOV_EXCL_LINE */ /* LCOV_EXCL_BR_LINE */
-                    if (succ != head) { rc = node_is_fixed(succ, &succ_is_fixed); if (rc != @PREFIX@_SUCCESS) return rc; } /* LCOV_EXCL_LINE */ /* LCOV_EXCL_BR_LINE */
-                    if (succ_is_fixed && succ->loss >= 2) heap->fix_loss_two = succ; /* LCOV_EXCL_LINE */ /* LCOV_EXCL_BR_LINE */
-                    else heap->fix_loss_two = NULL; /* LCOV_EXCL_BR_LINE */ /* LCOV_EXCL_LINE */
-                }
+                SFH_CHECK_RC(fix_list_remove_loss_two(heap, node, head, succ));
             } else {
-                int count;
-                @PREFIX@_node_t *first; /* LCOV_EXCL_LINE */ /* LCOV_EXCL_BR_LINE */
-                rc = fix_list_group(node, head, &count, &first); if (rc != @PREFIX@_SUCCESS) return rc; /* LCOV_EXCL_LINE */ /* LCOV_EXCL_BR_LINE */
-                if (count == 1) {
-                    if (heap->fix_loss_one_single == node) {
-                        int succ_is_fixed = 0; /* LCOV_EXCL_LINE */ /* LCOV_EXCL_BR_LINE */
-                        if (succ != head) { rc = node_is_fixed(succ, &succ_is_fixed); if (rc != @PREFIX@_SUCCESS) return rc; } /* LCOV_EXCL_LINE */ /* LCOV_EXCL_BR_LINE */
-                        if (succ_is_fixed && succ->loss == 1) heap->fix_loss_one_single = succ; /* LCOV_EXCL_BR_LINE */ /* LCOV_EXCL_LINE */
-                        else heap->fix_loss_one_single = NULL;
-                    }
-                } else if (count >= 3) { /* LCOV_EXCL_BR_LINE */ /* LCOV_EXCL_LINE */
-                    if (heap->fix_loss_one_multiple == node) heap->fix_loss_one_multiple = succ; /* LCOV_EXCL_BR_LINE */ /* LCOV_EXCL_LINE */
-                } else {
-                    @PREFIX@_node_t *other = (first != node) ? first : succ;
-                    if (heap->fix_loss_one_multiple == first) { /* LCOV_EXCL_BR_LINE */ /* LCOV_EXCL_LINE */
-                        int f_fixed = 0, fn_fixed = 0;
-                        first = first->next->next; /* LCOV_EXCL_LINE */ /* LCOV_EXCL_BR_LINE */
-                        if (first != head) { rc = node_is_fixed(first, &f_fixed); if (rc != @PREFIX@_SUCCESS) return rc; } /* LCOV_EXCL_LINE */ /* LCOV_EXCL_BR_LINE */
-                        if (first->next != head) { rc = node_is_fixed(first->next, &fn_fixed); if (rc != @PREFIX@_SUCCESS) return rc; } /* LCOV_EXCL_LINE */ /* LCOV_EXCL_BR_LINE */
-                        if (f_fixed && first->loss == 1 && fn_fixed && first->next->loss == 1 && first->rank == first->next->rank) { /* LCOV_EXCL_LINE */ /* LCOV_EXCL_BR_LINE */
-                            heap->fix_loss_one_multiple = first; /* LCOV_EXCL_BR_LINE */ /* LCOV_EXCL_LINE */
-                        } else {
-                            heap->fix_loss_one_multiple = NULL;
-                        }
-                    } /* LCOV_EXCL_LINE */ /* LCOV_EXCL_BR_LINE */
-                    rc = fix_list_unlink(other); if (rc != @PREFIX@_SUCCESS) return rc; /* LCOV_EXCL_LINE */ /* LCOV_EXCL_BR_LINE */
-                    rc = fix_list_insert(heap, LOSS_ONE_SINGLE_GROUP, other); if (rc != @PREFIX@_SUCCESS) return rc; /* LCOV_EXCL_LINE */ /* LCOV_EXCL_BR_LINE */
-                }
+                SFH_CHECK_RC(fix_list_remove_loss_one(heap, node, head, succ));
             }
-        } /* LCOV_EXCL_LINE */ /* LCOV_EXCL_BR_LINE */
-        rc = fix_list_unlink(node); if (rc != @PREFIX@_SUCCESS) return rc; /* LCOV_EXCL_LINE */ /* LCOV_EXCL_BR_LINE */
+        }
+        SFH_CHECK_RC(fix_list_unlink(node)); /* LCOV_EXCL_LINE */ /* LCOV_EXCL_BR_LINE */
     }
     return @PREFIX@_SUCCESS;
 }
@@ -634,11 +679,9 @@ static @PREFIX@_error_t rank_increase_reference_count(@PREFIX@_rank_t *rank) { /
  * \return Internal return value.
  */
 static @PREFIX@_error_t rank_next(@PREFIX@_rank_t *rank, @PREFIX@_rank_t **out_rank) {
-    @PREFIX@_error_t rc;
     if (rank->next == NULL || rank->next->rank > rank->rank + 1) { /* LCOV_EXCL_BR_LINE */ /* LCOV_EXCL_LINE */
         @PREFIX@_rank_t *new_rank;
-        rc = get_rank_obj(rank->heap, rank->rank + 1, &new_rank); /* LCOV_EXCL_LINE */ /* LCOV_EXCL_BR_LINE */
-        if (rc != @PREFIX@_SUCCESS) return rc; /* LCOV_EXCL_LINE */ /* LCOV_EXCL_BR_LINE */
+        SFH_CHECK_RC(get_rank_obj(rank->heap, rank->rank + 1, &new_rank)); /* LCOV_EXCL_LINE */ /* LCOV_EXCL_BR_LINE */
         new_rank->prev = rank;
         new_rank->next = rank->next;
         rank->next = new_rank;
@@ -655,12 +698,10 @@ static @PREFIX@_error_t rank_next(@PREFIX@_rank_t *rank, @PREFIX@_rank_t **out_r
  * \return Internal return value.
  */
 static @PREFIX@_error_t rank_prev(@PREFIX@_rank_t *rank, @PREFIX@_rank_t **out_rank) {
-    @PREFIX@_error_t rc;
     if (rank->prev == NULL || rank->prev->rank < rank->rank - 1) { /* LCOV_EXCL_LINE */ /* LCOV_EXCL_BR_LINE */
         /* LCOV_EXCL_START */
         @PREFIX@_rank_t *new_rank;
-        rc = get_rank_obj(rank->heap, rank->rank - 1, &new_rank); /* LCOV_EXCL_LINE */ /* LCOV_EXCL_BR_LINE */
-        if (rc != @PREFIX@_SUCCESS) return rc; /* LCOV_EXCL_LINE */ /* LCOV_EXCL_BR_LINE */
+        SFH_CHECK_RC(get_rank_obj(rank->heap, rank->rank - 1, &new_rank)); /* LCOV_EXCL_LINE */ /* LCOV_EXCL_BR_LINE */
         new_rank->prev = rank->prev; /* LCOV_EXCL_LINE */ /* LCOV_EXCL_BR_LINE */
         new_rank->next = rank; /* LCOV_EXCL_LINE */ /* LCOV_EXCL_BR_LINE */
         if (new_rank->prev) new_rank->prev->next = new_rank; /* LCOV_EXCL_LINE */ /* LCOV_EXCL_BR_LINE */
@@ -679,17 +720,14 @@ static @PREFIX@_error_t rank_prev(@PREFIX@_rank_t *rank, @PREFIX@_rank_t **out_r
  * \return Internal return value.
  */
 static @PREFIX@_error_t heap_rank_zero(@PREFIX@_heap_t *heap, @PREFIX@_rank_t **out_rank) {
-    @PREFIX@_error_t rc;
     @PREFIX@_rank_t *rank; /* LCOV_EXCL_LINE */ /* LCOV_EXCL_BR_LINE */
     if (!heap || !out_rank) return @PREFIX@_ERR_NULL_ARG; /* LCOV_EXCL_LINE */ /* LCOV_EXCL_BR_LINE */
     rank = heap->rank_list;
     if (rank == NULL) {
-        rc = get_rank_obj(heap, 0, &rank); /* LCOV_EXCL_LINE */ /* LCOV_EXCL_BR_LINE */
-        if (rc != @PREFIX@_SUCCESS) return rc; /* LCOV_EXCL_LINE */ /* LCOV_EXCL_BR_LINE */
+        SFH_CHECK_RC(get_rank_obj(heap, 0, &rank)); /* LCOV_EXCL_LINE */ /* LCOV_EXCL_BR_LINE */
         heap->rank_list = rank;
     }
-    rc = rank_increase_reference_count(rank); /* LCOV_EXCL_LINE */ /* LCOV_EXCL_BR_LINE */
-    if (rc != @PREFIX@_SUCCESS) return rc; /* LCOV_EXCL_LINE */ /* LCOV_EXCL_BR_LINE */
+    SFH_CHECK_RC(rank_increase_reference_count(rank)); /* LCOV_EXCL_LINE */ /* LCOV_EXCL_BR_LINE */
     *out_rank = rank;
     return @PREFIX@_SUCCESS;
 }
@@ -700,15 +738,21 @@ static @PREFIX@_error_t heap_rank_zero(@PREFIX@_heap_t *heap, @PREFIX@_rank_t **
  * \param new_rank Internal parameter.
  * \return Internal return value.
  */
+static @PREFIX@_error_t node_adjust_loss(@PREFIX@_heap_t *heap, @PREFIX@_node_t *node, int delta) {
+    SFH_CHECK_RC(fix_list_remove(heap, node)); /* LCOV_EXCL_LINE */ /* LCOV_EXCL_BR_LINE */
+    node->loss += delta;
+    SFH_CHECK_RC(fix_list_add(heap, node)); /* LCOV_EXCL_LINE */ /* LCOV_EXCL_BR_LINE */
+    return @PREFIX@_SUCCESS;
+}
+
 static @PREFIX@_error_t node_change_rank(@PREFIX@_node_t *node, @PREFIX@_rank_t *new_rank) {
-    @PREFIX@_error_t rc;
     @PREFIX@_heap_t *heap; /* LCOV_EXCL_LINE */ /* LCOV_EXCL_BR_LINE */
-    rc = node_heap(node, &heap); if (rc != @PREFIX@_SUCCESS) return rc; /* LCOV_EXCL_LINE */ /* LCOV_EXCL_BR_LINE */
-    rc = rank_increase_reference_count(new_rank); if (rc != @PREFIX@_SUCCESS) return rc; /* LCOV_EXCL_LINE */ /* LCOV_EXCL_BR_LINE */
-    rc = fix_list_remove(heap, node); if (rc != @PREFIX@_SUCCESS) return rc; /* LCOV_EXCL_LINE */ /* LCOV_EXCL_BR_LINE */
-    rc = rank_decrease_reference_count(node->rank); if (rc != @PREFIX@_SUCCESS) return rc; /* LCOV_EXCL_LINE */ /* LCOV_EXCL_BR_LINE */
+    SFH_CHECK_RC(node_heap(node, &heap)); /* LCOV_EXCL_LINE */ /* LCOV_EXCL_BR_LINE */
+    SFH_CHECK_RC(rank_increase_reference_count(new_rank)); /* LCOV_EXCL_LINE */ /* LCOV_EXCL_BR_LINE */
+    SFH_CHECK_RC(fix_list_remove(heap, node)); /* LCOV_EXCL_LINE */ /* LCOV_EXCL_BR_LINE */
+    SFH_CHECK_RC(rank_decrease_reference_count(node->rank)); /* LCOV_EXCL_LINE */ /* LCOV_EXCL_BR_LINE */
     node->rank = new_rank; /* LCOV_EXCL_LINE */ /* LCOV_EXCL_BR_LINE */
-    rc = fix_list_add(heap, node); if (rc != @PREFIX@_SUCCESS) return rc; /* LCOV_EXCL_LINE */ /* LCOV_EXCL_BR_LINE */
+    SFH_CHECK_RC(fix_list_add(heap, node)); /* LCOV_EXCL_LINE */ /* LCOV_EXCL_BR_LINE */
     return @PREFIX@_SUCCESS;
 }
 
@@ -718,10 +762,8 @@ static @PREFIX@_error_t node_change_rank(@PREFIX@_node_t *node, @PREFIX@_rank_t 
  * \return Internal return value.
  */
 static @PREFIX@_error_t node_increase_rank(@PREFIX@_node_t *node) {
-    @PREFIX@_error_t rc;
     @PREFIX@_rank_t *next_rank;
-    rc = rank_next(node->rank, &next_rank); /* LCOV_EXCL_LINE */ /* LCOV_EXCL_BR_LINE */
-    if (rc != @PREFIX@_SUCCESS) return rc; /* LCOV_EXCL_LINE */ /* LCOV_EXCL_BR_LINE */
+    SFH_CHECK_RC(rank_next(node->rank, &next_rank)); /* LCOV_EXCL_LINE */ /* LCOV_EXCL_BR_LINE */
     return node_change_rank(node, next_rank);
 }
 
@@ -731,10 +773,8 @@ static @PREFIX@_error_t node_increase_rank(@PREFIX@_node_t *node) {
  * \return Internal return value.
  */
 static @PREFIX@_error_t node_decrease_rank(@PREFIX@_node_t *node) {
-    @PREFIX@_error_t rc;
     @PREFIX@_rank_t *prev_rank;
-    rc = rank_prev(node->rank, &prev_rank); /* LCOV_EXCL_LINE */ /* LCOV_EXCL_BR_LINE */
-    if (rc != @PREFIX@_SUCCESS) return rc; /* LCOV_EXCL_LINE */ /* LCOV_EXCL_BR_LINE */
+    SFH_CHECK_RC(rank_prev(node->rank, &prev_rank)); /* LCOV_EXCL_LINE */ /* LCOV_EXCL_BR_LINE */
     return node_change_rank(node, prev_rank);
 }
 
@@ -745,7 +785,6 @@ static @PREFIX@_error_t node_decrease_rank(@PREFIX@_node_t *node) {
  * \return Internal return value.
  */
 static @PREFIX@_error_t node_add_child(@PREFIX@_node_t *parent, @PREFIX@_node_t *child) {
-    @PREFIX@_error_t rc;
     int child_is_passive, parent_is_active, child_is_fixed;
 
     child->parent = parent;
@@ -757,17 +796,36 @@ static @PREFIX@_error_t node_add_child(@PREFIX@_node_t *parent, @PREFIX@_node_t 
         child->right->left = child;
         child->left->right = child;
  /* LCOV_EXCL_LINE */ /* LCOV_EXCL_BR_LINE */
-        rc = node_is_passive(child, &child_is_passive); if (rc != @PREFIX@_SUCCESS) return rc; /* LCOV_EXCL_LINE */ /* LCOV_EXCL_BR_LINE */
+        SFH_CHECK_RC(node_is_passive(child, &child_is_passive)); /* LCOV_EXCL_LINE */ /* LCOV_EXCL_BR_LINE */
         if (!child_is_passive) {
             parent->left_child = child;
         }
     }
  /* LCOV_EXCL_LINE */ /* LCOV_EXCL_BR_LINE */
-    rc = node_is_active(parent, &parent_is_active); if (rc != @PREFIX@_SUCCESS) return rc; /* LCOV_EXCL_LINE */ /* LCOV_EXCL_BR_LINE */
-    rc = node_is_fixed(child, &child_is_fixed); if (rc != @PREFIX@_SUCCESS) return rc; /* LCOV_EXCL_LINE */ /* LCOV_EXCL_BR_LINE */
+    SFH_CHECK_RC(node_is_active(parent, &parent_is_active)); /* LCOV_EXCL_LINE */ /* LCOV_EXCL_BR_LINE */
+    SFH_CHECK_RC(node_is_fixed(child, &child_is_fixed)); /* LCOV_EXCL_LINE */ /* LCOV_EXCL_BR_LINE */
     if (parent_is_active && child_is_fixed) { /* LCOV_EXCL_BR_LINE */ /* LCOV_EXCL_LINE */
-        rc = node_increase_rank(parent); /* LCOV_EXCL_LINE */ /* LCOV_EXCL_BR_LINE */
-        if (rc != @PREFIX@_SUCCESS) return rc; /* LCOV_EXCL_LINE */ /* LCOV_EXCL_BR_LINE */
+        SFH_CHECK_RC(node_increase_rank(parent)); /* LCOV_EXCL_LINE */ /* LCOV_EXCL_BR_LINE */
+    }
+    return @PREFIX@_SUCCESS;
+}
+
+static @PREFIX@_error_t node_unlink_from_parent(@PREFIX@_node_t *node) {
+    @PREFIX@_node_t *parent = node->parent;
+    @PREFIX@_node_t *right = node->right;
+    @PREFIX@_node_t *left = node->left;
+
+    node->parent = NULL;
+    if (parent != NULL && parent->left_child == node) {
+        if (right != node) parent->left_child = right;
+        else parent->left_child = NULL;
+    }
+
+    if (right != node) {
+        left->right = right;
+        right->left = left;
+        node->right = node;
+        node->left = node;
     }
     return @PREFIX@_SUCCESS;
 }
@@ -779,37 +837,21 @@ static @PREFIX@_error_t node_add_child(@PREFIX@_node_t *parent, @PREFIX@_node_t 
  * \return Internal return value.
  */
 static @PREFIX@_error_t node_cut(@PREFIX@_heap_t *heap, @PREFIX@_node_t *node) {
-    @PREFIX@_error_t rc;
     @PREFIX@_node_t *parent = node->parent;
-    @PREFIX@_node_t *right = node->right;
-    @PREFIX@_node_t *left = node->left;
     int node_fixed, parent_active, parent_fixed;
 
-    node->parent = NULL;
-    if (parent->left_child == node) {
-        if (right != node) parent->left_child = right;
-        else parent->left_child = NULL;
-    }
+    SFH_CHECK_RC(node_unlink_from_parent(node));
 
-    if (right != node) {
-        left->right = right;
-        right->left = left;
-        node->right = node;
-        node->left = node;
-    }
  /* LCOV_EXCL_LINE */ /* LCOV_EXCL_BR_LINE */
-    rc = node_is_fixed(node, &node_fixed); if (rc != @PREFIX@_SUCCESS) return rc; /* LCOV_EXCL_LINE */ /* LCOV_EXCL_BR_LINE */
-    rc = node_is_active(parent, &parent_active); if (rc != @PREFIX@_SUCCESS) return rc; /* LCOV_EXCL_LINE */ /* LCOV_EXCL_BR_LINE */
+    SFH_CHECK_RC(node_is_fixed(node, &node_fixed)); /* LCOV_EXCL_LINE */ /* LCOV_EXCL_BR_LINE */
+    SFH_CHECK_RC(node_is_active(parent, &parent_active)); /* LCOV_EXCL_LINE */ /* LCOV_EXCL_BR_LINE */
 
     if (node_fixed && parent_active) { /* LCOV_EXCL_LINE */ /* LCOV_EXCL_BR_LINE */
-        rc = node_decrease_rank(parent); /* LCOV_EXCL_LINE */ /* LCOV_EXCL_BR_LINE */
-        if (rc != @PREFIX@_SUCCESS) return rc; /* LCOV_EXCL_LINE */ /* LCOV_EXCL_BR_LINE */
+        SFH_CHECK_RC(node_decrease_rank(parent)); /* LCOV_EXCL_LINE */ /* LCOV_EXCL_BR_LINE */
  /* LCOV_EXCL_LINE */ /* LCOV_EXCL_BR_LINE */
-        rc = node_is_fixed(parent, &parent_fixed); if (rc != @PREFIX@_SUCCESS) return rc; /* LCOV_EXCL_LINE */ /* LCOV_EXCL_BR_LINE */
+        SFH_CHECK_RC(node_is_fixed(parent, &parent_fixed)); /* LCOV_EXCL_LINE */ /* LCOV_EXCL_BR_LINE */
         if (parent_fixed) { /* LCOV_EXCL_LINE */ /* LCOV_EXCL_BR_LINE */
-            rc = fix_list_remove(heap, parent); if (rc != @PREFIX@_SUCCESS) return rc; /* LCOV_EXCL_LINE */ /* LCOV_EXCL_BR_LINE */
-            parent->loss++; /* LCOV_EXCL_LINE */ /* LCOV_EXCL_BR_LINE */
-            rc = fix_list_add(heap, parent); if (rc != @PREFIX@_SUCCESS) return rc; /* LCOV_EXCL_LINE */ /* LCOV_EXCL_BR_LINE */
+            SFH_CHECK_RC(node_adjust_loss(heap, parent, 1)); /* LCOV_EXCL_LINE */ /* LCOV_EXCL_BR_LINE */
         }
     }
     return @PREFIX@_SUCCESS;
@@ -820,14 +862,18 @@ static @PREFIX@_error_t node_cut(@PREFIX@_heap_t *heap, @PREFIX@_node_t *node) {
  * \param node Internal parameter.
  * \return Internal return value.
  */
+static @PREFIX@_error_t node_set_state(@PREFIX@_heap_t *heap, @PREFIX@_node_t *node, int is_free, int loss) {
+    SFH_CHECK_RC(fix_list_remove(heap, node)); /* LCOV_EXCL_LINE */ /* LCOV_EXCL_BR_LINE */
+    node->is_free = is_free;
+    node->loss = loss;
+    SFH_CHECK_RC(fix_list_add(heap, node)); /* LCOV_EXCL_LINE */ /* LCOV_EXCL_BR_LINE */
+    return @PREFIX@_SUCCESS;
+}
+
 static @PREFIX@_error_t node_free2fixed(@PREFIX@_node_t *node) {
-    @PREFIX@_error_t rc;
     @PREFIX@_heap_t *heap; /* LCOV_EXCL_LINE */ /* LCOV_EXCL_BR_LINE */
-    rc = node_heap(node, &heap); if (rc != @PREFIX@_SUCCESS) return rc; /* LCOV_EXCL_LINE */ /* LCOV_EXCL_BR_LINE */
-    rc = fix_list_remove(heap, node); if (rc != @PREFIX@_SUCCESS) return rc; /* LCOV_EXCL_LINE */ /* LCOV_EXCL_BR_LINE */
-    node->is_free = 0;
-    node->loss = 0; /* LCOV_EXCL_LINE */ /* LCOV_EXCL_BR_LINE */
-    rc = fix_list_add(heap, node); if (rc != @PREFIX@_SUCCESS) return rc; /* LCOV_EXCL_LINE */ /* LCOV_EXCL_BR_LINE */
+    SFH_CHECK_RC(node_heap(node, &heap)); /* LCOV_EXCL_LINE */ /* LCOV_EXCL_BR_LINE */
+    SFH_CHECK_RC(node_set_state(heap, node, 0, 0)); /* LCOV_EXCL_LINE */ /* LCOV_EXCL_BR_LINE */
     return @PREFIX@_SUCCESS;
 }
 
@@ -837,25 +883,18 @@ static @PREFIX@_error_t node_free2fixed(@PREFIX@_node_t *node) {
  * \return Internal return value.
  */
 static @PREFIX@_error_t node_fixed2free(@PREFIX@_node_t *node) {
-    @PREFIX@_error_t rc;
     @PREFIX@_node_t *parent = node->parent;
     @PREFIX@_heap_t *heap;
     int parent_fixed;
  /* LCOV_EXCL_LINE */ /* LCOV_EXCL_BR_LINE */
-    rc = node_heap(node, &heap); if (rc != @PREFIX@_SUCCESS) return rc; /* LCOV_EXCL_LINE */ /* LCOV_EXCL_BR_LINE */
-    rc = fix_list_remove(heap, node); if (rc != @PREFIX@_SUCCESS) return rc; /* LCOV_EXCL_LINE */ /* LCOV_EXCL_BR_LINE */
-    node->is_free = 1;
-    node->loss = -1; /* None equivalent for free */ /* LCOV_EXCL_LINE */ /* LCOV_EXCL_BR_LINE */
-    rc = fix_list_add(heap, node); if (rc != @PREFIX@_SUCCESS) return rc; /* LCOV_EXCL_LINE */ /* LCOV_EXCL_BR_LINE */
+    SFH_CHECK_RC(node_heap(node, &heap)); /* LCOV_EXCL_LINE */ /* LCOV_EXCL_BR_LINE */
+    SFH_CHECK_RC(node_set_state(heap, node, 1, -1)); /* LCOV_EXCL_LINE */ /* LCOV_EXCL_BR_LINE */
 
-    rc = node_decrease_rank(parent); /* LCOV_EXCL_LINE */ /* LCOV_EXCL_BR_LINE */
-    if (rc != @PREFIX@_SUCCESS) return rc; /* LCOV_EXCL_LINE */ /* LCOV_EXCL_BR_LINE */
+    SFH_CHECK_RC(node_decrease_rank(parent)); /* LCOV_EXCL_LINE */ /* LCOV_EXCL_BR_LINE */
  /* LCOV_EXCL_LINE */ /* LCOV_EXCL_BR_LINE */
-    rc = node_is_fixed(parent, &parent_fixed); if (rc != @PREFIX@_SUCCESS) return rc; /* LCOV_EXCL_LINE */ /* LCOV_EXCL_BR_LINE */
+    SFH_CHECK_RC(node_is_fixed(parent, &parent_fixed)); /* LCOV_EXCL_LINE */ /* LCOV_EXCL_BR_LINE */
     if (parent_fixed) { /* LCOV_EXCL_LINE */ /* LCOV_EXCL_BR_LINE */
-        rc = fix_list_remove(heap, parent); if (rc != @PREFIX@_SUCCESS) return rc; /* LCOV_EXCL_LINE */ /* LCOV_EXCL_BR_LINE */
-        parent->loss++; /* LCOV_EXCL_LINE */ /* LCOV_EXCL_BR_LINE */
-        rc = fix_list_add(heap, parent); if (rc != @PREFIX@_SUCCESS) return rc; /* LCOV_EXCL_LINE */ /* LCOV_EXCL_BR_LINE */
+        SFH_CHECK_RC(node_adjust_loss(heap, parent, 1)); /* LCOV_EXCL_LINE */ /* LCOV_EXCL_BR_LINE */
     }
     return @PREFIX@_SUCCESS;
 }
@@ -867,26 +906,22 @@ static @PREFIX@_error_t node_fixed2free(@PREFIX@_node_t *node) {
  * \return Internal return value.
  */
 static @PREFIX@_error_t node_passive2free(@PREFIX@_heap_t *heap, @PREFIX@_node_t *node) {
-    @PREFIX@_error_t rc;
     @PREFIX@_rank_t *rank_zero;
     @PREFIX@_node_t *parent = node->parent;
 
-    rc = heap_rank_zero(heap, &rank_zero); /* LCOV_EXCL_LINE */ /* LCOV_EXCL_BR_LINE */
-    if (rc != @PREFIX@_SUCCESS) return rc; /* LCOV_EXCL_LINE */ /* LCOV_EXCL_BR_LINE */
+    SFH_CHECK_RC(heap_rank_zero(heap, &rank_zero)); /* LCOV_EXCL_LINE */ /* LCOV_EXCL_BR_LINE */
  /* LCOV_EXCL_LINE */ /* LCOV_EXCL_BR_LINE */
-    rc = fix_list_remove(heap, node); if (rc != @PREFIX@_SUCCESS) return rc; /* LCOV_EXCL_LINE */ /* LCOV_EXCL_BR_LINE */
-    rc = rank_decrease_reference_count(node->rank); if (rc != @PREFIX@_SUCCESS) return rc; /* LCOV_EXCL_LINE */ /* LCOV_EXCL_BR_LINE */
+    SFH_CHECK_RC(fix_list_remove(heap, node)); /* LCOV_EXCL_LINE */ /* LCOV_EXCL_BR_LINE */
+    SFH_CHECK_RC(rank_decrease_reference_count(node->rank)); /* LCOV_EXCL_LINE */ /* LCOV_EXCL_BR_LINE */
     node->rank = rank_zero;
     node->is_free = 1;
     node->loss = -1;
 
     if (parent != NULL) {
-        rc = node_cut(heap, node); /* LCOV_EXCL_LINE */ /* LCOV_EXCL_BR_LINE */
-        if (rc != @PREFIX@_SUCCESS) return rc; /* LCOV_EXCL_LINE */ /* LCOV_EXCL_BR_LINE */
-        rc = node_add_child(parent, node); /* LCOV_EXCL_LINE */ /* LCOV_EXCL_BR_LINE */
-        if (rc != @PREFIX@_SUCCESS) return rc; /* LCOV_EXCL_LINE */ /* LCOV_EXCL_BR_LINE */
+        SFH_CHECK_RC(node_cut(heap, node)); /* LCOV_EXCL_LINE */ /* LCOV_EXCL_BR_LINE */
+        SFH_CHECK_RC(node_add_child(parent, node)); /* LCOV_EXCL_LINE */ /* LCOV_EXCL_BR_LINE */
     } /* LCOV_EXCL_LINE */ /* LCOV_EXCL_BR_LINE */
-    rc = fix_list_add(heap, node); if (rc != @PREFIX@_SUCCESS) return rc; /* LCOV_EXCL_LINE */ /* LCOV_EXCL_BR_LINE */
+    SFH_CHECK_RC(fix_list_add(heap, node)); /* LCOV_EXCL_LINE */ /* LCOV_EXCL_BR_LINE */
     return @PREFIX@_SUCCESS;
 }
 
@@ -899,17 +934,14 @@ static @PREFIX@_error_t node_passive2free(@PREFIX@_heap_t *heap, @PREFIX@_node_t
  * \return Internal return value.
  */
 static @PREFIX@_error_t heap_link(@PREFIX@_heap_t *heap, @PREFIX@_node_t *x, @PREFIX@_node_t *y, @PREFIX@_node_t **out_winner) {
-    @PREFIX@_error_t rc;
     int is_lt;
     (void)heap; /* LCOV_EXCL_LINE */ /* LCOV_EXCL_BR_LINE */
-    rc = node_lt(x, y, &is_lt); if (rc != @PREFIX@_SUCCESS) return rc; /* LCOV_EXCL_LINE */ /* LCOV_EXCL_BR_LINE */
+    SFH_CHECK_RC(node_lt(x, y, &is_lt)); /* LCOV_EXCL_LINE */ /* LCOV_EXCL_BR_LINE */
     if (is_lt) {
-        rc = node_add_child(x, y); /* LCOV_EXCL_LINE */ /* LCOV_EXCL_BR_LINE */
-        if (rc != @PREFIX@_SUCCESS) return rc; /* LCOV_EXCL_LINE */ /* LCOV_EXCL_BR_LINE */
+        SFH_CHECK_RC(node_add_child(x, y)); /* LCOV_EXCL_LINE */ /* LCOV_EXCL_BR_LINE */
         *out_winner = x;
     } else {
-        rc = node_add_child(y, x); /* LCOV_EXCL_LINE */ /* LCOV_EXCL_BR_LINE */
-        if (rc != @PREFIX@_SUCCESS) return rc; /* LCOV_EXCL_LINE */ /* LCOV_EXCL_BR_LINE */
+        SFH_CHECK_RC(node_add_child(y, x)); /* LCOV_EXCL_LINE */ /* LCOV_EXCL_BR_LINE */
         *out_winner = y;
     }
     return @PREFIX@_SUCCESS;
@@ -921,12 +953,10 @@ static @PREFIX@_error_t heap_link(@PREFIX@_heap_t *heap, @PREFIX@_node_t *x, @PR
  * \return Internal return value.
  */
 static @PREFIX@_error_t heap_reduce_passive(@PREFIX@_heap_t *heap) {
-    @PREFIX@_error_t rc;
     int i;
-    for (i = 0; i < 3; ++i) {
+    for (i = 0; i < SFH_PASSIVE_REDUCTIONS; ++i) {
         if (heap->fix_passive == NULL) return @PREFIX@_SUCCESS;
-        rc = node_passive2free(heap, heap->fix_passive); /* LCOV_EXCL_LINE */ /* LCOV_EXCL_BR_LINE */
-        if (rc != @PREFIX@_SUCCESS) return rc; /* LCOV_EXCL_LINE */ /* LCOV_EXCL_BR_LINE */
+        SFH_CHECK_RC(node_passive2free(heap, heap->fix_passive)); /* LCOV_EXCL_LINE */ /* LCOV_EXCL_BR_LINE */
     }
     return @PREFIX@_SUCCESS;
 }
@@ -938,7 +968,6 @@ static @PREFIX@_error_t heap_reduce_passive(@PREFIX@_heap_t *heap) {
  * \return Internal return value.
  */
 static @PREFIX@_error_t heap_reduce_free(@PREFIX@_heap_t *heap, int *out_changed) {
-    @PREFIX@_error_t rc;
     @PREFIX@_node_t *x = heap->fix_free_multiple;
     @PREFIX@_node_t *y, *z;
     int is_lt, z_passive;
@@ -946,29 +975,25 @@ static @PREFIX@_error_t heap_reduce_free(@PREFIX@_heap_t *heap, int *out_changed
     if (x == NULL) return @PREFIX@_SUCCESS;
     y = x->next;
  /* LCOV_EXCL_LINE */ /* LCOV_EXCL_BR_LINE */
-    rc = node_lt(y, x, &is_lt); if (rc != @PREFIX@_SUCCESS) return rc; /* LCOV_EXCL_LINE */ /* LCOV_EXCL_BR_LINE */
+    SFH_CHECK_RC(node_lt(y, x, &is_lt)); /* LCOV_EXCL_LINE */ /* LCOV_EXCL_BR_LINE */
     if (is_lt) {
         @PREFIX@_node_t *tmp = x;
         x = y;
         y = tmp;
     }
 
-    rc = node_cut(heap, y); /* LCOV_EXCL_LINE */ /* LCOV_EXCL_BR_LINE */
-    if (rc != @PREFIX@_SUCCESS) return rc; /* LCOV_EXCL_LINE */ /* LCOV_EXCL_BR_LINE */
+    SFH_CHECK_RC(node_cut(heap, y)); /* LCOV_EXCL_LINE */ /* LCOV_EXCL_BR_LINE */
  /* LCOV_EXCL_LINE */ /* LCOV_EXCL_BR_LINE */
-    rc = node_free2fixed(y); if (rc != @PREFIX@_SUCCESS) return rc; /* LCOV_EXCL_LINE */ /* LCOV_EXCL_BR_LINE */
+    SFH_CHECK_RC(node_free2fixed(y)); /* LCOV_EXCL_LINE */ /* LCOV_EXCL_BR_LINE */
 
-    rc = node_add_child(x, y); /* LCOV_EXCL_LINE */ /* LCOV_EXCL_BR_LINE */
-    if (rc != @PREFIX@_SUCCESS) return rc; /* LCOV_EXCL_LINE */ /* LCOV_EXCL_BR_LINE */
+    SFH_CHECK_RC(node_add_child(x, y)); /* LCOV_EXCL_LINE */ /* LCOV_EXCL_BR_LINE */
 
     z = x->left_child->left; /* LCOV_EXCL_LINE */ /* LCOV_EXCL_BR_LINE */
-    rc = node_is_passive(z, &z_passive); if (rc != @PREFIX@_SUCCESS) return rc; /* LCOV_EXCL_LINE */ /* LCOV_EXCL_BR_LINE */
+    SFH_CHECK_RC(node_is_passive(z, &z_passive)); /* LCOV_EXCL_LINE */ /* LCOV_EXCL_BR_LINE */
     if (z_passive) {
         /* LCOV_EXCL_START */
-        rc = node_cut(heap, z); /* LCOV_EXCL_LINE */ /* LCOV_EXCL_BR_LINE */
-        if (rc != @PREFIX@_SUCCESS) return rc; /* LCOV_EXCL_LINE */ /* LCOV_EXCL_BR_LINE */
-        rc = node_add_child(heap->root, z); /* LCOV_EXCL_LINE */ /* LCOV_EXCL_BR_LINE */
-        if (rc != @PREFIX@_SUCCESS) return rc; /* LCOV_EXCL_LINE */ /* LCOV_EXCL_BR_LINE */
+        SFH_CHECK_RC(node_cut(heap, z)); /* LCOV_EXCL_LINE */ /* LCOV_EXCL_BR_LINE */
+        SFH_CHECK_RC(node_add_child(heap->root, z)); /* LCOV_EXCL_LINE */ /* LCOV_EXCL_BR_LINE */
         /* LCOV_EXCL_STOP */
     }
     *out_changed = 1;
@@ -981,11 +1006,41 @@ static @PREFIX@_error_t heap_reduce_free(@PREFIX@_heap_t *heap, int *out_changed
  * \param out_changed Internal parameter.
  * \return Internal return value.
  */
+
+
+static @PREFIX@_error_t heap_reduce_root_cut_and_sort(@PREFIX@_heap_t *heap, @PREFIX@_node_t **x_ptr, @PREFIX@_node_t **y_ptr, @PREFIX@_node_t **z_ptr) {
+    @PREFIX@_node_t *x = *x_ptr, *y = *y_ptr, *z = *z_ptr, *tmp;
+    int lt;
+    SFH_CHECK_RC(node_cut(heap, x)); /* LCOV_EXCL_LINE */ /* LCOV_EXCL_BR_LINE */
+    SFH_CHECK_RC(node_cut(heap, y)); /* LCOV_EXCL_LINE */ /* LCOV_EXCL_BR_LINE */
+    SFH_CHECK_RC(node_cut(heap, z)); /* LCOV_EXCL_LINE */ /* LCOV_EXCL_BR_LINE */
+
+    SFH_CHECK_RC(node_passive2free(heap, x)); /* LCOV_EXCL_LINE */ /* LCOV_EXCL_BR_LINE */
+    SFH_CHECK_RC(node_passive2free(heap, y)); /* LCOV_EXCL_LINE */ /* LCOV_EXCL_BR_LINE */
+    SFH_CHECK_RC(node_passive2free(heap, z)); /* LCOV_EXCL_LINE */ /* LCOV_EXCL_BR_LINE */
+
+    SFH_CHECK_RC(node_lt(y, x, &lt)); /* LCOV_EXCL_LINE */ /* LCOV_EXCL_BR_LINE */
+    if (lt) { tmp = x; x = y; y = tmp; } /* LCOV_EXCL_LINE */ /* LCOV_EXCL_BR_LINE */
+
+    SFH_CHECK_RC(node_lt(z, y, &lt)); /* LCOV_EXCL_LINE */ /* LCOV_EXCL_BR_LINE */
+    if (lt) { /* LCOV_EXCL_LINE */ /* LCOV_EXCL_BR_LINE */
+        /* LCOV_EXCL_START */
+        tmp = y; y = z; z = tmp; /* LCOV_EXCL_LINE */ /* LCOV_EXCL_BR_LINE */
+        SFH_CHECK_RC(node_lt(y, x, &lt)); /* LCOV_EXCL_LINE */ /* LCOV_EXCL_BR_LINE */
+        if (lt) { tmp = x; x = y; y = tmp; } /* LCOV_EXCL_LINE */ /* LCOV_EXCL_BR_LINE */
+        /* LCOV_EXCL_STOP */
+    }
+
+    *x_ptr = x;
+    *y_ptr = y;
+    *z_ptr = z;
+    return @PREFIX@_SUCCESS;
+}
+
 static @PREFIX@_error_t heap_reduce_root(@PREFIX@_heap_t *heap, int *out_changed) {
-    @PREFIX@_error_t rc;
     @PREFIX@_node_t *root = heap->root;
-    @PREFIX@_node_t *x, *y, *z, *tmp;
-    int x_passive, lt;
+    @PREFIX@_node_t *x, *y, *z;
+    int x_passive;
     *out_changed = 0;
 
     if (root == NULL || root->left_child == NULL) return @PREFIX@_SUCCESS; /* LCOV_EXCL_LINE */ /* LCOV_EXCL_BR_LINE */
@@ -994,35 +1049,17 @@ static @PREFIX@_error_t heap_reduce_root(@PREFIX@_heap_t *heap, int *out_changed
     y = z->left;
     x = y->left;
  /* LCOV_EXCL_LINE */ /* LCOV_EXCL_BR_LINE */
-    rc = node_is_passive(x, &x_passive); if (rc != @PREFIX@_SUCCESS) return rc; /* LCOV_EXCL_LINE */ /* LCOV_EXCL_BR_LINE */
+    SFH_CHECK_RC(node_is_passive(x, &x_passive)); /* LCOV_EXCL_LINE */ /* LCOV_EXCL_BR_LINE */
     if (z == y || z == x || !x_passive) return @PREFIX@_SUCCESS;
  /* LCOV_EXCL_LINE */ /* LCOV_EXCL_BR_LINE */
-    rc = node_cut(heap, x); if (rc != @PREFIX@_SUCCESS) return rc; /* LCOV_EXCL_LINE */ /* LCOV_EXCL_BR_LINE */
-    rc = node_cut(heap, y); if (rc != @PREFIX@_SUCCESS) return rc; /* LCOV_EXCL_LINE */ /* LCOV_EXCL_BR_LINE */
-    rc = node_cut(heap, z); if (rc != @PREFIX@_SUCCESS) return rc; /* LCOV_EXCL_LINE */ /* LCOV_EXCL_BR_LINE */
+    SFH_CHECK_RC(heap_reduce_root_cut_and_sort(heap, &x, &y, &z));
  /* LCOV_EXCL_LINE */ /* LCOV_EXCL_BR_LINE */
-    rc = node_passive2free(heap, x); if (rc != @PREFIX@_SUCCESS) return rc; /* LCOV_EXCL_LINE */ /* LCOV_EXCL_BR_LINE */
-    rc = node_passive2free(heap, y); if (rc != @PREFIX@_SUCCESS) return rc; /* LCOV_EXCL_LINE */ /* LCOV_EXCL_BR_LINE */
-    rc = node_passive2free(heap, z); if (rc != @PREFIX@_SUCCESS) return rc; /* LCOV_EXCL_LINE */ /* LCOV_EXCL_BR_LINE */
+    SFH_CHECK_RC(node_free2fixed(y)); /* LCOV_EXCL_LINE */ /* LCOV_EXCL_BR_LINE */
+    SFH_CHECK_RC(node_free2fixed(z)); /* LCOV_EXCL_LINE */ /* LCOV_EXCL_BR_LINE */
  /* LCOV_EXCL_LINE */ /* LCOV_EXCL_BR_LINE */
-    rc = node_lt(y, x, &lt); if (rc != @PREFIX@_SUCCESS) return rc; /* LCOV_EXCL_LINE */ /* LCOV_EXCL_BR_LINE */
-    if (lt) { tmp = x; x = y; y = tmp; } /* LCOV_EXCL_LINE */ /* LCOV_EXCL_BR_LINE */
- /* LCOV_EXCL_LINE */ /* LCOV_EXCL_BR_LINE */
-    rc = node_lt(z, y, &lt); if (rc != @PREFIX@_SUCCESS) return rc; /* LCOV_EXCL_LINE */ /* LCOV_EXCL_BR_LINE */
-    if (lt) { /* LCOV_EXCL_LINE */ /* LCOV_EXCL_BR_LINE */
-        /* LCOV_EXCL_START */
-        tmp = y; y = z; z = tmp; /* LCOV_EXCL_LINE */ /* LCOV_EXCL_BR_LINE */
-        rc = node_lt(y, x, &lt); if (rc != @PREFIX@_SUCCESS) return rc; /* LCOV_EXCL_LINE */ /* LCOV_EXCL_BR_LINE */
-        if (lt) { tmp = x; x = y; y = tmp; } /* LCOV_EXCL_LINE */ /* LCOV_EXCL_BR_LINE */
-        /* LCOV_EXCL_STOP */
-    }
- /* LCOV_EXCL_LINE */ /* LCOV_EXCL_BR_LINE */
-    rc = node_free2fixed(y); if (rc != @PREFIX@_SUCCESS) return rc; /* LCOV_EXCL_LINE */ /* LCOV_EXCL_BR_LINE */
-    rc = node_free2fixed(z); if (rc != @PREFIX@_SUCCESS) return rc; /* LCOV_EXCL_LINE */ /* LCOV_EXCL_BR_LINE */
- /* LCOV_EXCL_LINE */ /* LCOV_EXCL_BR_LINE */
-    rc = node_add_child(root, x); if (rc != @PREFIX@_SUCCESS) return rc; /* LCOV_EXCL_LINE */ /* LCOV_EXCL_BR_LINE */
-    rc = node_add_child(x, y); if (rc != @PREFIX@_SUCCESS) return rc; /* LCOV_EXCL_LINE */ /* LCOV_EXCL_BR_LINE */
-    rc = node_add_child(y, z); if (rc != @PREFIX@_SUCCESS) return rc; /* LCOV_EXCL_LINE */ /* LCOV_EXCL_BR_LINE */
+    SFH_CHECK_RC(node_add_child(root, x)); /* LCOV_EXCL_LINE */ /* LCOV_EXCL_BR_LINE */
+    SFH_CHECK_RC(node_add_child(x, y)); /* LCOV_EXCL_LINE */ /* LCOV_EXCL_BR_LINE */
+    SFH_CHECK_RC(node_add_child(y, z)); /* LCOV_EXCL_LINE */ /* LCOV_EXCL_BR_LINE */
 
     *out_changed = 1;
     return @PREFIX@_SUCCESS;
@@ -1035,7 +1072,6 @@ static @PREFIX@_error_t heap_reduce_root(@PREFIX@_heap_t *heap, int *out_changed
  * \return Internal return value.
  */
 static @PREFIX@_error_t heap_reduce_loss_one(@PREFIX@_heap_t *heap, int *out_changed) {
-    @PREFIX@_error_t rc;
     @PREFIX@_node_t *x = heap->fix_loss_one_multiple;
     @PREFIX@_node_t *y, *z;
     int is_lt, z_passive;
@@ -1043,34 +1079,26 @@ static @PREFIX@_error_t heap_reduce_loss_one(@PREFIX@_heap_t *heap, int *out_cha
     if (x == NULL) return @PREFIX@_SUCCESS;
     y = x->next;
  /* LCOV_EXCL_LINE */ /* LCOV_EXCL_BR_LINE */
-    rc = node_lt(y, x, &is_lt); if (rc != @PREFIX@_SUCCESS) return rc; /* LCOV_EXCL_LINE */ /* LCOV_EXCL_BR_LINE */
+    SFH_CHECK_RC(node_lt(y, x, &is_lt)); /* LCOV_EXCL_LINE */ /* LCOV_EXCL_BR_LINE */
     if (is_lt) {
         @PREFIX@_node_t *tmp = x;
         x = y;
         y = tmp;
     }
 
-    rc = node_cut(heap, y); /* LCOV_EXCL_LINE */ /* LCOV_EXCL_BR_LINE */
-    if (rc != @PREFIX@_SUCCESS) return rc; /* LCOV_EXCL_LINE */ /* LCOV_EXCL_BR_LINE */
+    SFH_CHECK_RC(node_cut(heap, y)); /* LCOV_EXCL_LINE */ /* LCOV_EXCL_BR_LINE */
  /* LCOV_EXCL_LINE */ /* LCOV_EXCL_BR_LINE */
-    rc = fix_list_remove(heap, x); if (rc != @PREFIX@_SUCCESS) return rc; /* LCOV_EXCL_LINE */ /* LCOV_EXCL_BR_LINE */
-    rc = fix_list_remove(heap, y); if (rc != @PREFIX@_SUCCESS) return rc; /* LCOV_EXCL_LINE */ /* LCOV_EXCL_BR_LINE */
-    x->loss--;
-    y->loss--; /* LCOV_EXCL_LINE */ /* LCOV_EXCL_BR_LINE */
-    rc = fix_list_add(heap, x); if (rc != @PREFIX@_SUCCESS) return rc; /* LCOV_EXCL_LINE */ /* LCOV_EXCL_BR_LINE */
-    rc = fix_list_add(heap, y); if (rc != @PREFIX@_SUCCESS) return rc; /* LCOV_EXCL_LINE */ /* LCOV_EXCL_BR_LINE */
+    SFH_CHECK_RC(node_adjust_loss(heap, x, -1)); /* LCOV_EXCL_LINE */ /* LCOV_EXCL_BR_LINE */
+    SFH_CHECK_RC(node_adjust_loss(heap, y, -1)); /* LCOV_EXCL_LINE */ /* LCOV_EXCL_BR_LINE */
 
-    rc = node_add_child(x, y); /* LCOV_EXCL_LINE */ /* LCOV_EXCL_BR_LINE */
-    if (rc != @PREFIX@_SUCCESS) return rc; /* LCOV_EXCL_LINE */ /* LCOV_EXCL_BR_LINE */
+    SFH_CHECK_RC(node_add_child(x, y)); /* LCOV_EXCL_LINE */ /* LCOV_EXCL_BR_LINE */
 
     z = x->left_child->left; /* LCOV_EXCL_LINE */ /* LCOV_EXCL_BR_LINE */
-    rc = node_is_passive(z, &z_passive); if (rc != @PREFIX@_SUCCESS) return rc; /* LCOV_EXCL_LINE */ /* LCOV_EXCL_BR_LINE */
+    SFH_CHECK_RC(node_is_passive(z, &z_passive)); /* LCOV_EXCL_LINE */ /* LCOV_EXCL_BR_LINE */
     if (z_passive) { /* LCOV_EXCL_LINE */ /* LCOV_EXCL_BR_LINE */
         /* LCOV_EXCL_START */
-        rc = node_cut(heap, z); /* LCOV_EXCL_LINE */ /* LCOV_EXCL_BR_LINE */
-        if (rc != @PREFIX@_SUCCESS) return rc; /* LCOV_EXCL_LINE */ /* LCOV_EXCL_BR_LINE */
-        rc = node_add_child(heap->root, z); /* LCOV_EXCL_LINE */ /* LCOV_EXCL_BR_LINE */
-        if (rc != @PREFIX@_SUCCESS) return rc; /* LCOV_EXCL_LINE */ /* LCOV_EXCL_BR_LINE */
+        SFH_CHECK_RC(node_cut(heap, z)); /* LCOV_EXCL_LINE */ /* LCOV_EXCL_BR_LINE */
+        SFH_CHECK_RC(node_add_child(heap->root, z)); /* LCOV_EXCL_LINE */ /* LCOV_EXCL_BR_LINE */
         /* LCOV_EXCL_STOP */
     }
     *out_changed = 1;
@@ -1084,12 +1112,10 @@ static @PREFIX@_error_t heap_reduce_loss_one(@PREFIX@_heap_t *heap, int *out_cha
  * \return Internal return value.
  */
 static @PREFIX@_error_t heap_reduce_loss_two(@PREFIX@_heap_t *heap, int *out_changed) {
-    @PREFIX@_error_t rc;
     @PREFIX@_node_t *x = heap->fix_loss_two;
     *out_changed = 0;
     if (x == NULL) return @PREFIX@_SUCCESS; /* LCOV_EXCL_BR_LINE */ /* LCOV_EXCL_LINE */
-    rc = node_fixed2free(x); /* LCOV_EXCL_LINE */ /* LCOV_EXCL_BR_LINE */
-    if (rc != @PREFIX@_SUCCESS) return rc; /* LCOV_EXCL_LINE */ /* LCOV_EXCL_BR_LINE */
+    SFH_CHECK_RC(node_fixed2free(x)); /* LCOV_EXCL_LINE */ /* LCOV_EXCL_BR_LINE */
     *out_changed = 1; /* LCOV_EXCL_BR_LINE */ /* LCOV_EXCL_LINE */
     return @PREFIX@_SUCCESS; /* LCOV_EXCL_BR_LINE */ /* LCOV_EXCL_LINE */
 }
@@ -1101,14 +1127,11 @@ static @PREFIX@_error_t heap_reduce_loss_two(@PREFIX@_heap_t *heap, int *out_cha
  * \return Internal return value.
  */
 static @PREFIX@_error_t heap_reduce_loss(@PREFIX@_heap_t *heap, int *out_changed) {
-    @PREFIX@_error_t rc;
     *out_changed = 0;
-    rc = heap_reduce_loss_one(heap, out_changed); /* LCOV_EXCL_LINE */ /* LCOV_EXCL_BR_LINE */
-    if (rc != @PREFIX@_SUCCESS) return rc; /* LCOV_EXCL_LINE */ /* LCOV_EXCL_BR_LINE */
+    SFH_CHECK_RC(heap_reduce_loss_one(heap, out_changed)); /* LCOV_EXCL_LINE */ /* LCOV_EXCL_BR_LINE */
     if (*out_changed) return @PREFIX@_SUCCESS;
 
-    rc = heap_reduce_loss_two(heap, out_changed); /* LCOV_EXCL_LINE */ /* LCOV_EXCL_BR_LINE */
-    if (rc != @PREFIX@_SUCCESS) return rc; /* LCOV_EXCL_LINE */ /* LCOV_EXCL_BR_LINE */
+    SFH_CHECK_RC(heap_reduce_loss_two(heap, out_changed)); /* LCOV_EXCL_LINE */ /* LCOV_EXCL_BR_LINE */
 
     return @PREFIX@_SUCCESS;
 }
@@ -1123,17 +1146,17 @@ typedef @PREFIX@_error_t (*reduction_func)(@PREFIX@_heap_t *, int *);
  * \return Internal return value.
  */
 static @PREFIX@_error_t heap_apply_reductions(@PREFIX@_heap_t *heap, reduction_func *reductions, int count) {
-    @PREFIX@_error_t rc;
-    reduction_func failed[20];
+    reduction_func failed[SFH_MAX_REDUCTIONS];
     int failed_count;
     int i;
     int changed;
 
+    if (count > SFH_MAX_REDUCTIONS) count = SFH_MAX_REDUCTIONS;
+
     while (count > 0) { /* LCOV_EXCL_LINE */ /* LCOV_EXCL_BR_LINE */
         failed_count = 0;
         for (i = 0; i < count; ++i) {
-            rc = reductions[i](heap, &changed); /* LCOV_EXCL_LINE */ /* LCOV_EXCL_BR_LINE */
-            if (rc != @PREFIX@_SUCCESS) return rc; /* LCOV_EXCL_LINE */ /* LCOV_EXCL_BR_LINE */
+            SFH_CHECK_RC(reductions[i](heap, &changed)); /* LCOV_EXCL_LINE */ /* LCOV_EXCL_BR_LINE */
             if (!changed) {
                 failed[failed_count++] = reductions[i];
             }
@@ -1194,26 +1217,23 @@ static @PREFIX@_error_t heap_apply_reductions(@PREFIX@_heap_t *heap, reduction_f
  * \return Internal return value.
  */
 static @PREFIX@_error_t node_retire(@PREFIX@_heap_t *heap, @PREFIX@_node_t *node) {
-    @PREFIX@_error_t rc;
     @PREFIX@_rank_t *rank; /* LCOV_EXCL_LINE */ /* LCOV_EXCL_BR_LINE */
     if (!heap || !node) return @PREFIX@_ERR_NULL_ARG; /* LCOV_EXCL_LINE */ /* LCOV_EXCL_BR_LINE */
     rank = node->rank; /* LCOV_EXCL_LINE */ /* LCOV_EXCL_BR_LINE */
-    rc = fix_list_remove(heap, node); if (rc != @PREFIX@_SUCCESS) return rc; /* LCOV_EXCL_LINE */ /* LCOV_EXCL_BR_LINE */
+    SFH_CHECK_RC(fix_list_remove(heap, node)); /* LCOV_EXCL_LINE */ /* LCOV_EXCL_BR_LINE */
     heap->size--;
     node->rank = NULL; /* LCOV_EXCL_LINE */ /* LCOV_EXCL_BR_LINE */
-    rc = rank_decrease_reference_count(rank); if (rc != @PREFIX@_SUCCESS) return rc; /* LCOV_EXCL_LINE */ /* LCOV_EXCL_BR_LINE */
+    SFH_CHECK_RC(rank_decrease_reference_count(rank)); /* LCOV_EXCL_LINE */ /* LCOV_EXCL_BR_LINE */
     return @PREFIX@_SUCCESS;
 }
 
 @PREFIX@_error_t @PREFIX@_insert(@PREFIX@_heap_t *heap, @PREFIX@_node_t *node, @PREFIX@_key_t key, @PREFIX@_val_t value) {
-    @PREFIX@_error_t rc;
-    reduction_func reductions[5];
+    reduction_func reductions[SFH_INSERT_REDUCTIONS];
     @PREFIX@_rank_t *rank_zero;
 
     if (!heap || !node) return @PREFIX@_ERR_NULL_ARG;
 
-    rc = heap_rank_zero(heap, &rank_zero); /* LCOV_EXCL_LINE */ /* LCOV_EXCL_BR_LINE */
-    if (rc != @PREFIX@_SUCCESS) return rc; /* LCOV_EXCL_LINE */ /* LCOV_EXCL_BR_LINE */
+    SFH_CHECK_RC(heap_rank_zero(heap, &rank_zero)); /* LCOV_EXCL_LINE */ /* LCOV_EXCL_BR_LINE */
 
     heap->size++;
     node->key = key;
@@ -1229,14 +1249,13 @@ static @PREFIX@_error_t node_retire(@PREFIX@_heap_t *heap, @PREFIX@_node_t *node
     node->rank = rank_zero;
     node->prev = node;
     node->next = node; /* LCOV_EXCL_LINE */ /* LCOV_EXCL_BR_LINE */
-    rc = fix_list_add(heap, node); if (rc != @PREFIX@_SUCCESS) return rc; /* LCOV_EXCL_LINE */ /* LCOV_EXCL_BR_LINE */
+    SFH_CHECK_RC(fix_list_add(heap, node)); /* LCOV_EXCL_LINE */ /* LCOV_EXCL_BR_LINE */
 
     if (heap->root == NULL) {
         heap->root = node;
     } else {
         @PREFIX@_node_t *new_root;
-        rc = heap_link(heap, heap->root, node, &new_root); /* LCOV_EXCL_LINE */ /* LCOV_EXCL_BR_LINE */
-        if (rc != @PREFIX@_SUCCESS) return rc; /* LCOV_EXCL_LINE */ /* LCOV_EXCL_BR_LINE */
+        SFH_CHECK_RC(heap_link(heap, heap->root, node, &new_root)); /* LCOV_EXCL_LINE */ /* LCOV_EXCL_BR_LINE */
         heap->root = new_root;
 
         reductions[0] = heap_reduce_free;
@@ -1244,8 +1263,7 @@ static @PREFIX@_error_t node_retire(@PREFIX@_heap_t *heap, @PREFIX@_node_t *node
         reductions[2] = heap_reduce_free;
         reductions[3] = heap_reduce_root;
         reductions[4] = heap_reduce_root;
-        rc = heap_apply_reductions(heap, reductions, 5); /* LCOV_EXCL_LINE */ /* LCOV_EXCL_BR_LINE */
-        if (rc != @PREFIX@_SUCCESS) return rc; /* LCOV_EXCL_LINE */ /* LCOV_EXCL_BR_LINE */
+        SFH_CHECK_RC(heap_apply_reductions(heap, reductions, SFH_INSERT_REDUCTIONS)); /* LCOV_EXCL_LINE */ /* LCOV_EXCL_BR_LINE */
     }
 
     return @PREFIX@_SUCCESS;
@@ -1253,9 +1271,8 @@ static @PREFIX@_error_t node_retire(@PREFIX@_heap_t *heap, @PREFIX@_node_t *node
 
 
 @PREFIX@_error_t @PREFIX@_meld(@PREFIX@_heap_t *h1, @PREFIX@_heap_t *h2, @PREFIX@_heap_t **out_heap) {
-    @PREFIX@_error_t rc;
     @PREFIX@_heap_t *small_heap, *large_heap;
-    reduction_func reductions[2];
+    reduction_func reductions[SFH_MELD_REDUCTIONS];
 
     if (!h1 || !h2 || !out_heap) return @PREFIX@_ERR_NULL_ARG;
 
@@ -1276,43 +1293,68 @@ static @PREFIX@_error_t node_retire(@PREFIX@_heap_t *heap, @PREFIX@_node_t *node
         @PREFIX@_node_t *small_root = small_heap->root;
         @PREFIX@_node_t *large_head;
         @PREFIX@_node_t *small_head;
-        @PREFIX@_node_t *small_tail;
         @PREFIX@_node_t *new_root;
 
         small_heap->size = 0;
         small_heap->root = NULL;
         small_heap->rank_list = NULL; /* LCOV_EXCL_LINE */ /* LCOV_EXCL_BR_LINE */
-        rc = fix_list_retire(small_heap); if (rc != @PREFIX@_SUCCESS) return rc; /* LCOV_EXCL_LINE */ /* LCOV_EXCL_BR_LINE */
+        SFH_CHECK_RC(fix_list_retire(small_heap)); /* LCOV_EXCL_LINE */ /* LCOV_EXCL_BR_LINE */
  /* LCOV_EXCL_LINE */ /* LCOV_EXCL_BR_LINE */
-        rc = fix_list_head(large_heap, &large_head); if (rc != @PREFIX@_SUCCESS) return rc; /* LCOV_EXCL_LINE */ /* LCOV_EXCL_BR_LINE */
+        SFH_CHECK_RC(fix_list_head(large_heap, &large_head)); /* LCOV_EXCL_LINE */ /* LCOV_EXCL_BR_LINE */
         small_head = small_root;
-        small_tail = small_root->prev;
 
-        if (large_head != NULL) { /* LCOV_EXCL_LINE */ /* LCOV_EXCL_BR_LINE */
-            small_head->prev = large_head->prev;
-            small_tail->next = large_head;
-            small_tail->next->prev = small_tail;
-            small_head->prev->next = small_head;
-        }
+        SFH_CHECK_RC(fix_list_splice(small_head, large_head)); /* LCOV_EXCL_LINE */ /* LCOV_EXCL_BR_LINE */
 
         large_heap->fix_passive = small_head;
 
-        rc = heap_link(large_heap, large_heap->root, small_root, &new_root); /* LCOV_EXCL_LINE */ /* LCOV_EXCL_BR_LINE */
-        if (rc != @PREFIX@_SUCCESS) return rc; /* LCOV_EXCL_LINE */ /* LCOV_EXCL_BR_LINE */
+        SFH_CHECK_RC(heap_link(large_heap, large_heap->root, small_root, &new_root)); /* LCOV_EXCL_LINE */ /* LCOV_EXCL_BR_LINE */
         large_heap->root = new_root;
 
         reductions[0] = heap_reduce_free;
         reductions[1] = heap_reduce_root;
-        rc = heap_apply_reductions(large_heap, reductions, 2); /* LCOV_EXCL_LINE */ /* LCOV_EXCL_BR_LINE */
-        if (rc != @PREFIX@_SUCCESS) return rc; /* LCOV_EXCL_LINE */ /* LCOV_EXCL_BR_LINE */
+        SFH_CHECK_RC(heap_apply_reductions(large_heap, reductions, SFH_MELD_REDUCTIONS)); /* LCOV_EXCL_LINE */ /* LCOV_EXCL_BR_LINE */
     }
 
     *out_heap = large_heap;
     return @PREFIX@_SUCCESS;
 }
 
+
+static @PREFIX@_error_t heap_consolidate_roots(@PREFIX@_heap_t *heap, @PREFIX@_node_t *root) {
+    @PREFIX@_node_t *new_root = root->left_child;
+    @PREFIX@_node_t *child = new_root->right;
+    int child_fixed, is_lt;
+
+    while (child != root->left_child) { /* LCOV_EXCL_LINE */ /* LCOV_EXCL_BR_LINE */
+        SFH_CHECK_RC(node_lt(child, new_root, &is_lt)); /* LCOV_EXCL_LINE */ /* LCOV_EXCL_BR_LINE */
+        if (is_lt) {
+            new_root = child;
+        }
+        child = child->right;
+    }
+/* LCOV_EXCL_LINE */ /* LCOV_EXCL_BR_LINE */
+    SFH_CHECK_RC(node_is_fixed(new_root, &child_fixed)); /* LCOV_EXCL_LINE */ /* LCOV_EXCL_BR_LINE */
+    if (child_fixed) {
+        SFH_CHECK_RC(node_fixed2free(new_root)); /* LCOV_EXCL_LINE */ /* LCOV_EXCL_BR_LINE */
+    }
+    SFH_CHECK_RC(node_cut(heap, new_root)); /* LCOV_EXCL_LINE */ /* LCOV_EXCL_BR_LINE */
+
+    while (root->left_child != NULL) {
+        @PREFIX@_node_t *winner;
+        child = root->left_child; /* LCOV_EXCL_LINE */ /* LCOV_EXCL_BR_LINE */
+        SFH_CHECK_RC(node_is_fixed(child, &child_fixed)); /* LCOV_EXCL_LINE */ /* LCOV_EXCL_BR_LINE */
+        if (child_fixed) {
+            SFH_CHECK_RC(node_fixed2free(child)); /* LCOV_EXCL_LINE */ /* LCOV_EXCL_BR_LINE */
+        }
+        SFH_CHECK_RC(node_cut(heap, child)); /* LCOV_EXCL_LINE */ /* LCOV_EXCL_BR_LINE */
+        SFH_CHECK_RC(heap_link(heap, new_root, child, &winner)); /* LCOV_EXCL_LINE */ /* LCOV_EXCL_BR_LINE */
+    }
+
+    heap->root = new_root; /* LCOV_EXCL_LINE */ /* LCOV_EXCL_BR_LINE */
+    return @PREFIX@_SUCCESS;
+}
+
 @PREFIX@_error_t @PREFIX@_delete_min(@PREFIX@_heap_t *heap) {
-    @PREFIX@_error_t rc;
     @PREFIX@_node_t *root;
 
     if (!heap) return @PREFIX@_ERR_NULL_ARG;
@@ -1321,61 +1363,24 @@ static @PREFIX@_error_t node_retire(@PREFIX@_heap_t *heap, @PREFIX@_node_t *node
     root = heap->root;
     if (heap->size == 1) {
         heap->root = NULL; /* LCOV_EXCL_LINE */ /* LCOV_EXCL_BR_LINE */
-        rc = node_retire(heap, root); if (rc != @PREFIX@_SUCCESS) return rc; /* LCOV_EXCL_LINE */ /* LCOV_EXCL_BR_LINE */
+        SFH_CHECK_RC(node_retire(heap, root)); /* LCOV_EXCL_LINE */ /* LCOV_EXCL_BR_LINE */
     } else {
-        @PREFIX@_node_t *new_root = root->left_child;
-        @PREFIX@_node_t *child = new_root->right;
-        int child_fixed, is_lt;
+        SFH_CHECK_RC(heap_consolidate_roots(heap, root));
 
-        while (child != root->left_child) { /* LCOV_EXCL_LINE */ /* LCOV_EXCL_BR_LINE */
-            rc = node_lt(child, new_root, &is_lt); if (rc != @PREFIX@_SUCCESS) return rc; /* LCOV_EXCL_LINE */ /* LCOV_EXCL_BR_LINE */
-            if (is_lt) {
-                new_root = child;
-            }
-            child = child->right;
-        }
- /* LCOV_EXCL_LINE */ /* LCOV_EXCL_BR_LINE */
-        rc = node_is_fixed(new_root, &child_fixed); if (rc != @PREFIX@_SUCCESS) return rc; /* LCOV_EXCL_LINE */ /* LCOV_EXCL_BR_LINE */
-        if (child_fixed) {
-            rc = node_fixed2free(new_root); /* LCOV_EXCL_LINE */ /* LCOV_EXCL_BR_LINE */
-            if (rc != @PREFIX@_SUCCESS) return rc; /* LCOV_EXCL_LINE */ /* LCOV_EXCL_BR_LINE */
-        }
-        rc = node_cut(heap, new_root); /* LCOV_EXCL_LINE */ /* LCOV_EXCL_BR_LINE */
-        if (rc != @PREFIX@_SUCCESS) return rc; /* LCOV_EXCL_LINE */ /* LCOV_EXCL_BR_LINE */
-
-        while (root->left_child != NULL) {
-            @PREFIX@_node_t *winner;
-            child = root->left_child; /* LCOV_EXCL_LINE */ /* LCOV_EXCL_BR_LINE */
-            rc = node_is_fixed(child, &child_fixed); if (rc != @PREFIX@_SUCCESS) return rc; /* LCOV_EXCL_LINE */ /* LCOV_EXCL_BR_LINE */
-            if (child_fixed) {
-                rc = node_fixed2free(child); /* LCOV_EXCL_LINE */ /* LCOV_EXCL_BR_LINE */
-                if (rc != @PREFIX@_SUCCESS) return rc; /* LCOV_EXCL_LINE */ /* LCOV_EXCL_BR_LINE */
-            }
-            rc = node_cut(heap, child); /* LCOV_EXCL_LINE */ /* LCOV_EXCL_BR_LINE */
-            if (rc != @PREFIX@_SUCCESS) return rc; /* LCOV_EXCL_LINE */ /* LCOV_EXCL_BR_LINE */
-            rc = heap_link(heap, new_root, child, &winner); /* LCOV_EXCL_LINE */ /* LCOV_EXCL_BR_LINE */
-            if (rc != @PREFIX@_SUCCESS) return rc; /* LCOV_EXCL_LINE */ /* LCOV_EXCL_BR_LINE */
-        }
-
-        heap->root = new_root; /* LCOV_EXCL_LINE */ /* LCOV_EXCL_BR_LINE */
-        rc = node_retire(heap, root); if (rc != @PREFIX@_SUCCESS) return rc; /* LCOV_EXCL_LINE */ /* LCOV_EXCL_BR_LINE */
-        rc = heap_reduce_passive(heap); /* LCOV_EXCL_LINE */ /* LCOV_EXCL_BR_LINE */
-        if (rc != @PREFIX@_SUCCESS) return rc; /* LCOV_EXCL_LINE */ /* LCOV_EXCL_BR_LINE */
+        SFH_CHECK_RC(node_retire(heap, root)); /* LCOV_EXCL_LINE */ /* LCOV_EXCL_BR_LINE */
+        SFH_CHECK_RC(heap_reduce_passive(heap)); /* LCOV_EXCL_LINE */ /* LCOV_EXCL_BR_LINE */
 
         while (1) { /* LCOV_EXCL_BR_LINE */ /* LCOV_EXCL_LINE */
             int changed;
-            rc = heap_reduce_loss(heap, &changed); /* LCOV_EXCL_LINE */ /* LCOV_EXCL_BR_LINE */
-            if (rc != @PREFIX@_SUCCESS) return rc; /* LCOV_EXCL_LINE */ /* LCOV_EXCL_BR_LINE */
+            SFH_CHECK_RC(heap_reduce_loss(heap, &changed)); /* LCOV_EXCL_LINE */ /* LCOV_EXCL_BR_LINE */
             if (!changed) break; /* LCOV_EXCL_BR_LINE */ /* LCOV_EXCL_LINE */
         }
 
         while (1) {
             int changed1, changed2;
-            rc = heap_reduce_free(heap, &changed1); /* LCOV_EXCL_LINE */ /* LCOV_EXCL_BR_LINE */
-            if (rc != @PREFIX@_SUCCESS) return rc; /* LCOV_EXCL_LINE */ /* LCOV_EXCL_BR_LINE */
+            SFH_CHECK_RC(heap_reduce_free(heap, &changed1)); /* LCOV_EXCL_LINE */ /* LCOV_EXCL_BR_LINE */
 
-            rc = heap_reduce_root(heap, &changed2); /* LCOV_EXCL_LINE */ /* LCOV_EXCL_BR_LINE */
-            if (rc != @PREFIX@_SUCCESS) return rc; /* LCOV_EXCL_LINE */ /* LCOV_EXCL_BR_LINE */
+            SFH_CHECK_RC(heap_reduce_root(heap, &changed2)); /* LCOV_EXCL_LINE */ /* LCOV_EXCL_BR_LINE */
 
             if (!changed1 && !changed2) break; /* LCOV_EXCL_LINE */ /* LCOV_EXCL_BR_LINE */
         }
@@ -1384,10 +1389,9 @@ static @PREFIX@_error_t node_retire(@PREFIX@_heap_t *heap, @PREFIX@_node_t *node
 }
 
 @PREFIX@_error_t @PREFIX@_decrease_key(@PREFIX@_heap_t *heap, @PREFIX@_node_t *node, @PREFIX@_key_t key) {
-    @PREFIX@_error_t rc;
     @PREFIX@_node_t *parent;
     @PREFIX@_node_t *new_root;
-    reduction_func reductions[10];
+    reduction_func reductions[SFH_DECREASE_KEY_REDUCTIONS];
     int i;
     int changed;
     int is_lt = 0, node_fixed;
@@ -1398,45 +1402,38 @@ static @PREFIX@_error_t node_retire(@PREFIX@_heap_t *heap, @PREFIX@_node_t *node
     parent = node->parent;
 
     if (parent != NULL) { /* LCOV_EXCL_LINE */ /* LCOV_EXCL_BR_LINE */
-        rc = node_lt(node, parent, &is_lt); if (rc != @PREFIX@_SUCCESS) return rc; /* LCOV_EXCL_LINE */ /* LCOV_EXCL_BR_LINE */
+        SFH_CHECK_RC(node_lt(node, parent, &is_lt)); /* LCOV_EXCL_LINE */ /* LCOV_EXCL_BR_LINE */
     }
 
     if (parent == NULL || !is_lt) { /* LCOV_EXCL_BR_LINE */ /* LCOV_EXCL_LINE */
         return @PREFIX@_SUCCESS;
     }
  /* LCOV_EXCL_LINE */ /* LCOV_EXCL_BR_LINE */
-    rc = node_is_fixed(node, &node_fixed); if (rc != @PREFIX@_SUCCESS) return rc; /* LCOV_EXCL_LINE */ /* LCOV_EXCL_BR_LINE */
+    SFH_CHECK_RC(node_is_fixed(node, &node_fixed)); /* LCOV_EXCL_LINE */ /* LCOV_EXCL_BR_LINE */
     if (node_fixed) { /* LCOV_EXCL_LINE */ /* LCOV_EXCL_BR_LINE */
-        rc = node_fixed2free(node); /* LCOV_EXCL_LINE */ /* LCOV_EXCL_BR_LINE */
-        if (rc != @PREFIX@_SUCCESS) return rc; /* LCOV_EXCL_LINE */ /* LCOV_EXCL_BR_LINE */
+        SFH_CHECK_RC(node_fixed2free(node)); /* LCOV_EXCL_LINE */ /* LCOV_EXCL_BR_LINE */
     }
 
-    rc = node_cut(heap, node); /* LCOV_EXCL_LINE */ /* LCOV_EXCL_BR_LINE */
-    if (rc != @PREFIX@_SUCCESS) return rc; /* LCOV_EXCL_LINE */ /* LCOV_EXCL_BR_LINE */
+    SFH_CHECK_RC(node_cut(heap, node)); /* LCOV_EXCL_LINE */ /* LCOV_EXCL_BR_LINE */
 
-    rc = heap_link(heap, node, heap->root, &new_root); /* LCOV_EXCL_LINE */ /* LCOV_EXCL_BR_LINE */
-    if (rc != @PREFIX@_SUCCESS) return rc; /* LCOV_EXCL_LINE */ /* LCOV_EXCL_BR_LINE */
+    SFH_CHECK_RC(heap_link(heap, node, heap->root, &new_root)); /* LCOV_EXCL_LINE */ /* LCOV_EXCL_BR_LINE */
     heap->root = new_root;
 
-    rc = heap_reduce_loss(heap, &changed); /* LCOV_EXCL_LINE */ /* LCOV_EXCL_BR_LINE */
-    if (rc != @PREFIX@_SUCCESS) return rc; /* LCOV_EXCL_LINE */ /* LCOV_EXCL_BR_LINE */
+    SFH_CHECK_RC(heap_reduce_loss(heap, &changed)); /* LCOV_EXCL_LINE */ /* LCOV_EXCL_BR_LINE */
 
     for (i = 0; i < 6; ++i) reductions[i] = heap_reduce_free;
-    for (i = 6; i < 10; ++i) reductions[i] = heap_reduce_root;
+    for (i = 6; i < SFH_DECREASE_KEY_REDUCTIONS; ++i) reductions[i] = heap_reduce_root;
 
-    rc = heap_apply_reductions(heap, reductions, 10); /* LCOV_EXCL_LINE */ /* LCOV_EXCL_BR_LINE */
-    if (rc != @PREFIX@_SUCCESS) return rc; /* LCOV_EXCL_LINE */ /* LCOV_EXCL_BR_LINE */
+    SFH_CHECK_RC(heap_apply_reductions(heap, reductions, SFH_DECREASE_KEY_REDUCTIONS)); /* LCOV_EXCL_LINE */ /* LCOV_EXCL_BR_LINE */
 
     return @PREFIX@_SUCCESS;
 }
 
 @PREFIX@_error_t @PREFIX@_delete(@PREFIX@_heap_t *heap, @PREFIX@_node_t *node) {
-    @PREFIX@_error_t rc;
     if (!heap || !node) return @PREFIX@_ERR_NULL_ARG;
 
     node->is_min_inf = 1;
-    rc = @PREFIX@_decrease_key(heap, node, node->key); /* LCOV_EXCL_LINE */ /* LCOV_EXCL_BR_LINE */
-    if (rc != @PREFIX@_SUCCESS) return rc; /* LCOV_EXCL_LINE */ /* LCOV_EXCL_BR_LINE */
+    SFH_CHECK_RC(@PREFIX@_decrease_key(heap, node, node->key)); /* LCOV_EXCL_LINE */ /* LCOV_EXCL_BR_LINE */
 
     return @PREFIX@_delete_min(heap);
 }

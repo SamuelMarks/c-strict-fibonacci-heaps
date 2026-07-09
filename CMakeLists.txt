@@ -132,7 +132,6 @@ if(BUILD_TESTING AND PROJECT_NAME STREQUAL CMAKE_PROJECT_NAME)
         greatest
         GIT_REPOSITORY https://github.com/SamuelMarks/greatest.git
         GIT_TAG        master
-        PATCH_COMMAND bash -c "sed -i \'s/CMAKE_SOURCE_DIR/CMAKE_CURRENT_SOURCE_DIR/g\' CMakeLists.txt && sed -i \'s/add_subdirectory(/\#add_subdirectory(/g\' CMakeLists.txt && sed -i \'s/include(CPack)/\#include(CPack)/g\' CMakeLists.txt"
     )
     FetchContent_MakeAvailable(greatest)
 
