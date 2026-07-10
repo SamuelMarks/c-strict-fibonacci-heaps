@@ -2,6 +2,7 @@
 #include "@PREFIX@.h"
 #include <assert.h>
 #include <stddef.h>
+#include <stdio.h>
 /* clang-format on */
 /**
  * \file strict_fibonacci_heaps.c.in
@@ -11,8 +12,8 @@
 #define SFH_CHECK_RC(expr)                                                     \
   do {                                                                         \
     @PREFIX@_error_t _rc = (expr);                                            \
-    if (_rc != @PREFIX@_SUCCESS)                                              \
-      return _rc;                                                              \
+    if (_rc != @PREFIX@_SUCCESS) {                                            \
+      fprintf(stderr, "Error %d returned from %s\n", (int)_rc, #expr); return _rc; }                                                             \
   } while (0)
 
 #define PASSIVE_GROUP 0
@@ -1155,8 +1156,7 @@ static @PREFIX@_error_t heap_reduce_free(@PREFIX@_heap_t *heap,
 static @PREFIX@_error_t heap_reduce_root_cut_and_sort(@PREFIX@_heap_t *heap,
                                                        @PREFIX@_node_t **x_ptr,
                                                        @PREFIX@_node_t **y_ptr,
-                                                       @PREFIX
-                                                       @_node_t **z_ptr) {
+                                                       @PREFIX@_node_t **z_ptr) {
   @PREFIX@_node_t *x = *x_ptr, *y = *y_ptr, *z = *z_ptr, *tmp;
   int lt;
   SFH_CHECK_RC(node_cut(heap, x));
@@ -1365,16 +1365,14 @@ static @PREFIX@_error_t heap_apply_reductions(@PREFIX@_heap_t *heap,
   return @PREFIX@_SUCCESS;
 }
 
-@PREFIX@_error_t @PREFIX
-    @_empty(const @PREFIX@_heap_t *heap, int *out_empty) {
+@PREFIX@_error_t @PREFIX@_empty(const @PREFIX@_heap_t *heap, int *out_empty) {
   if (!heap || !out_empty)
     return @PREFIX@_ERR_NULL_ARG;
   *out_empty = (heap->size == 0) ? 1 : 0;
   return @PREFIX@_SUCCESS;
 }
 
-@PREFIX@_error_t @PREFIX
-    @_find_min(const @PREFIX@_heap_t *heap, @PREFIX@_node_t **out_node) {
+@PREFIX@_error_t @PREFIX@_find_min(const @PREFIX@_heap_t *heap, @PREFIX@_node_t **out_node) {
   if (!heap || !out_node)
     return @PREFIX@_ERR_NULL_ARG;
   if (heap->size == 0)
@@ -1402,8 +1400,7 @@ static @PREFIX@_error_t node_retire(@PREFIX@_heap_t *heap,
   return @PREFIX@_SUCCESS;
 }
 
-@PREFIX@_error_t @PREFIX
-    @_insert(@PREFIX@_heap_t *heap, @PREFIX@_node_t *node,
+@PREFIX@_error_t @PREFIX@_insert(@PREFIX@_heap_t *heap, @PREFIX@_node_t *node,
              @PREFIX@_key_t key, @PREFIX@_val_t value) {
   reduction_func reductions[SFH_INSERT_REDUCTIONS];
   @PREFIX@_rank_t *rank_zero;
@@ -1574,8 +1571,7 @@ static @PREFIX@_error_t heap_consolidate_roots(@PREFIX@_heap_t *heap,
   return @PREFIX@_SUCCESS;
 }
 
-@PREFIX@_error_t @PREFIX
-    @_decrease_key(@PREFIX@_heap_t *heap, @PREFIX@_node_t *node,
+@PREFIX@_error_t @PREFIX@_decrease_key(@PREFIX@_heap_t *heap, @PREFIX@_node_t *node,
                    @PREFIX@_key_t key) {
   @PREFIX@_node_t *parent;
   @PREFIX@_node_t *new_root;
@@ -1621,8 +1617,7 @@ static @PREFIX@_error_t heap_consolidate_roots(@PREFIX@_heap_t *heap,
   return @PREFIX@_SUCCESS;
 }
 
-@PREFIX@_error_t @PREFIX
-    @_delete(@PREFIX@_heap_t *heap, @PREFIX@_node_t *node) {
+@PREFIX@_error_t @PREFIX@_delete(@PREFIX@_heap_t *heap, @PREFIX@_node_t *node) {
   if (!heap || !node)
     return @PREFIX@_ERR_NULL_ARG;
 
